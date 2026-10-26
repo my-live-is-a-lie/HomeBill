@@ -1,5 +1,6 @@
 package com.example.data.model
 
+import androidx.annotation.Keep
 import androidx.annotation.StringRes
 import com.example.R
 import com.google.firebase.Timestamp
@@ -7,6 +8,7 @@ import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.IgnoreExtraProperties
 import com.google.firebase.firestore.ServerTimestamp
 
+@Keep
 enum class UtilityType(
   val firestoreKey: String,
   @param:StringRes val labelRes: Int,
@@ -104,6 +106,7 @@ enum class UtilityType(
 }
 
 @IgnoreExtraProperties
+@Keep
 data class BillSheetRow(
   val label: String = "",
   val value: String = "",
@@ -111,6 +114,7 @@ data class BillSheetRow(
 )
 
 @IgnoreExtraProperties
+@Keep
 data class BillCategory(
   @DocumentId val id: String = "",
   val userId: String = "",
@@ -123,6 +127,7 @@ data class BillCategory(
 )
 
 @IgnoreExtraProperties
+@Keep
 data class BillRecord(
   @DocumentId val id: String = "",
   val userId: String = "",
@@ -149,6 +154,7 @@ data class BillRecord(
 )
 
 @IgnoreExtraProperties
+@Keep
 data class HouseholdBudget(
   @DocumentId val id: String = "",
   val userId: String = "",

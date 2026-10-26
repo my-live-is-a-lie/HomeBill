@@ -1,15 +1,33 @@
 package com.example.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -18,28 +36,93 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import com.example.data.remote.GeminiApiClient
 import com.example.data.remote.UserGeminiKeyStore
+import kotlinx.coroutines.launch
 
 /**
- * Settings screen for the user's own Gemini API key.
- *
- * The key is stored on the device only and is required before any AI
- * feature (bill scanning, reclassification, assistant chat) can run.
- * No developer key is baked into the app anymore for these features.
+ * Settings hub. Today it holds one entry — AI keys — so more settings
+ * can be added here later as further list entries without restructuring.
+ * The key-management UI itself lives on the AI-key page, reached by
+ * tapping the AI entry below, not directly on the hub.
  */
 @Composable
 fun SettingsScreen() {
+  var showAiKeys by remember { mutableStateOf(false) }
+  if (showAiKeys) {
+    GeminiKeysScreen(onBack = { showAiKeys = false })
+  } else {
+    SettingsHubScreen(onOpenAiKeys = { showAiKeys = true })
+  }
+}
+
+@Composable
+private fun SettingsHubScreen(onOpenAiKeys: () -> Unit) {
   val context = LocalContext.current
-  var keyText by remember { mutableStateOf(UserGeminiKeyStore.getKey(context)) }
-  var showKey by remember { mutableStateOf(false) }
-  var savedMessage by remember { mutableStateOf("") }
-  var hasKey by remember { mutableStateOf(UserGeminiKeyStore.hasKey(context)) }
+  val keys = UserGeminiKeyStore.getKeys(context)
+  val active = UserGeminiKeyStore.activeIndex(context)
+  Column(
+    modifier = Modifier
+      .fillMaxSize()
+      .verticalScroll(rememberScrollState())
+      .padding(16.dp),
+    verticalArrangement = Arrangement.spacedBy(16.dp),
+  ) {
+    Text(text = "الإعدادات", style = MaterialTheme.typography.titleLarge)
+    Card(onClick = onOpenAiKeys, modifier = Modifier.fillMaxWidth()) {
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null)
+        Column(modifier = Modifier.weight(1f)) {
+          Text(text = "الذكاء الاصطناعي", style = MaterialTheme.typography.titleMedium)
+          Text(
+            text = if (keys.isEmpty()) {
+              "إدارة مفاتيح Gemini — لم يتم إضافة مفتاح بعد"
+            } else {
+              "إدارة مفاتيح Gemini — ${keys.size} مفتاح، النشط: " +
+                UserGeminiKeyStore.maskedKey(keys[active.coerceIn(0, keys.lastIndex)])
+            },
+            style = MaterialTheme.typography.bodyMedium,
+          )
+        }
+      }
+    }
+    Text(
+      text = "ستظهر هنا إعدادات أخرى مستقبلًا.",
+      style = MaterialTheme.typography.bodySmall,
+    )
+  }
+}
+
+@Composable
+private fun GeminiKeysScreen(onBack: () -> Unit) {
+  val context = LocalContext.current
+  val scope = rememberCoroutineScope()
+  var keys by remember { mutableStateOf(UserGeminiKeyStore.getKeys(context)) }
+  var activeIndex by remember { mutableStateOf(UserGeminiKeyStore.activeIndex(context)) }
+  var inputText by remember { mutableStateOf("") }
+  var showInputKey by remember { mutableStateOf(false) }
+  var shownKeys by remember { mutableStateOf(setOf<Int>()) }
+  var message by remember { mutableStateOf("") }
+  var messageIsError by remember { mutableStateOf(false) }
+  var testingIndex by remember { mutableStateOf(-1) }
+  var testResults by remember { mutableStateOf(mapOf<Int, Pair<Boolean, String>>()) }
+
+  fun refresh() {
+    keys = UserGeminiKeyStore.getKeys(context)
+    activeIndex = UserGeminiKeyStore.activeIndex(context)
+  }
 
   Column(
     modifier = Modifier
@@ -48,60 +131,55 @@ fun SettingsScreen() {
       .padding(16.dp),
     verticalArrangement = Arrangement.spacedBy(16.dp),
   ) {
-    Text(
-      text = "إعدادات الذكاء الاصطناعي",
-      style = MaterialTheme.typography.titleLarge,
-    )
-    Text(
-      text = "أدخل مفتاح Gemini الخاص بك قبل استخدام قراءة الفواتير والمساعد الذكي. " +
-        "المفتاح يُحفظ على جهازك فقط، ولا يُرسل إلى خادم، ولا يُرفع إلى GitHub، " +
-        "وحصته من حسابك أنت في Google AI Studio.",
-      style = MaterialTheme.typography.bodyMedium,
-    )
-    Text(
-      text = if (hasKey) {
-        "تم حفظ مفتاح: ${UserGeminiKeyStore.maskedKey()}"
-      } else {
-        "لم يتم إضافة مفتاح بعد — أدوات الذكاء الاصطناعي لن تعمل حتى تضيفه."
-      },
-      style = MaterialTheme.typography.bodyMedium,
-      color = if (hasKey) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
-    )
-    OutlinedTextField(
-      value = keyText,
-      onValueChange = { keyText = it; savedMessage = "" },
-      label = { Text("مفتاح Gemini API") },
-      singleLine = true,
-      visualTransformation = if (showKey) VisualTransformation.None else PasswordVisualTransformation(),
-      modifier = Modifier.fillMaxWidth(),
-    )
-    OutlinedButton(
-      onClick = { showKey = !showKey },
-      modifier = Modifier.fillMaxWidth(),
-    ) {
-      Text(if (showKey) "إخفاء المفتاح" else "إظهار المفتاح")
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      IconButton(onClick = onBack) {
+        Icon(imageVector = Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "عودة إلى الإعدادات")
+      }
+      Text(text = "مفاتيح Gemini", style = MaterialTheme.typography.titleLarge)
     }
+    Text(
+      text = "أضف مفتاح Gemini الخاص بك قبل استخدام قراءة الفواتير والمساعد الذكي. " +
+        "المفاتيح تُحفظ على جهازك فقط، ولا تُرسل إلى خادم، ولا تُرفع إلى GitHub، " +
+        "وحصتها من حسابك أنت في Google AI Studio. يمكنك إضافة أكثر من مفتاح " +
+        "واختيار أي واحد يُستخدم حاليًا.",
+      style = MaterialTheme.typography.bodyMedium,
+    )
+    // In RTL, trailingIcon renders on the left side of the text field.
+    OutlinedTextField(
+      value = inputText,
+      onValueChange = { inputText = it; message = "" },
+      label = { Text("مفتاح Gemini API جديد") },
+      singleLine = true,
+      visualTransformation = if (showInputKey) VisualTransformation.None else PasswordVisualTransformation(),
+      trailingIcon = {
+        IconButton(onClick = { showInputKey = !showInputKey }) {
+          Icon(
+            imageVector = if (showInputKey) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+            contentDescription = if (showInputKey) "إخفاء المفتاح" else "إظهار المفتاح",
+          )
+        }
+      },
+      modifier = Modifier.fillMaxWidth(),
+    )
     Button(
       onClick = {
-        UserGeminiKeyStore.saveKey(keyText, context)
-        hasKey = UserGeminiKeyStore.hasKey(context)
-        savedMessage = if (hasKey) "تم حفظ المفتاح على جهازك." else "أدخل مفتاحًا غير فارغ أولًا."
+        val added = UserGeminiKeyStore.addKey(inputText, context)
+        if (added) {
+          inputText = ""
+          message = "تمت إضافة المفتاح."
+          messageIsError = false
+        } else if (inputText.trim().isBlank()) {
+          message = "أدخل مفتاحًا غير فارغ أولًا."
+          messageIsError = true
+        } else {
+          message = "هذا المفتاح موجود بالفعل."
+          messageIsError = true
+        }
+        refresh()
       },
       modifier = Modifier.fillMaxWidth(),
     ) {
-      Text("حفظ المفتاح")
-    }
-    OutlinedButton(
-      onClick = {
-        UserGeminiKeyStore.clearKey(context)
-        keyText = ""
-        hasKey = false
-        savedMessage = "تم حذف المفتاح المحفوظ."
-      },
-      enabled = hasKey,
-      modifier = Modifier.fillMaxWidth(),
-    ) {
-      Text("حذف المفتاح المحفوظ")
+      Text("إضافة مفتاح")
     }
     OutlinedButton(
       onClick = {
@@ -112,11 +190,121 @@ fun SettingsScreen() {
     ) {
       Text("إنشاء مفتاح من Google AI Studio")
     }
-    if (savedMessage.isNotBlank()) {
-      Text(text = savedMessage, style = MaterialTheme.typography.bodyMedium)
+    if (message.isNotBlank()) {
+      Text(
+        text = message,
+        style = MaterialTheme.typography.bodyMedium,
+        color = if (messageIsError) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+      )
     }
+    if (keys.isEmpty()) {
+      Text(
+        text = "لم يتم إضافة أي مفتاح بعد — أدوات الذكاء الاصطناعي لن تعمل حتى تضيف واحدًا.",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.error,
+      )
+    }
+    keys.forEachIndexed { index, key ->
+      val isActive = index == activeIndex
+      val shown = index in shownKeys
+      Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+          modifier = Modifier.fillMaxWidth().padding(16.dp),
+          verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+              text = if (isActive) "مفتاح ${index + 1} — مستخدم حاليًا" else "مفتاح ${index + 1}",
+              style = MaterialTheme.typography.titleMedium,
+              modifier = Modifier.weight(1f),
+            )
+            if (isActive) {
+              Text(text = "نشط", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            }
+          }
+          Text(
+            text = if (shown) key else UserGeminiKeyStore.maskedKey(key),
+            style = MaterialTheme.typography.bodySmall,
+          )
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            IconButton(
+              onClick = {
+                shownKeys = if (shown) shownKeys - index else shownKeys + index
+              },
+            ) {
+              Icon(
+                imageVector = if (shown) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                contentDescription = if (shown) "إخفاء المفتاح" else "إظهار المفتاح",
+                modifier = Modifier.size(20.dp),
+              )
+            }
+            IconButton(
+              onClick = {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Gemini API key", key))
+                Toast.makeText(context, "تم نسخ المفتاح", Toast.LENGTH_SHORT).show()
+              },
+            ) {
+              Icon(
+                imageVector = Icons.Default.ContentCopy,
+                contentDescription = "نسخ المفتاح",
+                modifier = Modifier.size(20.dp),
+              )
+            }
+            IconButton(
+              onClick = {
+                UserGeminiKeyStore.removeKey(index, context)
+                shownKeys = shownKeys - index
+                testResults = testResults - index
+                refresh()
+              },
+            ) {
+              Icon(
+                imageVector = Icons.Default.Delete,
+                contentDescription = "حذف المفتاح",
+                modifier = Modifier.size(20.dp),
+              )
+            }
+          }
+          Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (!isActive) {
+              OutlinedButton(
+                onClick = {
+                  UserGeminiKeyStore.setActiveKey(index, context)
+                  refresh()
+                },
+              ) {
+                Text("استخدام هذا المفتاح")
+              }
+            }
+            OutlinedButton(
+              enabled = testingIndex != index,
+              onClick = {
+                testingIndex = index
+                testResults = testResults - index
+                scope.launch {
+                  val result = GeminiApiClient().testApiKey(key)
+                  testResults = testResults + (index to (result.isSuccess to (result.getOrNull() ?: result.exceptionOrNull()?.message ?: "فشل الاختبار.")))
+                  testingIndex = -1
+                }
+              },
+            ) {
+              Text(if (testingIndex == index) "جارٍ الاختبار..." else "اختبار المفتاح")
+            }
+          }
+          testResults[index]?.let { (ok, text) ->
+            Text(
+              text = text,
+              style = MaterialTheme.typography.bodyMedium,
+              color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+            )
+          }
+        }
+      }
+    }
+    Spacer(modifier = Modifier.height(8.dp))
     Text(
-      text = "تنبيه: مفتاحك مفتاح شخصي — لا تشاركه مع أحد، ويمكنك حذفه من هنا في أي وقت.",
+      text = "تنبيه: مفاتيحك شخصية — لا تشاركها مع أحد، ويمكنك حذف أي مفتاح من هنا في أي وقت.",
       style = MaterialTheme.typography.bodySmall,
     )
   }

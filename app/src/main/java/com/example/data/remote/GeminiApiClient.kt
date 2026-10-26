@@ -274,8 +274,12 @@ class GeminiApiClient(
 
   /**
    * Tests a single key with a minimal one-word Gemini call, without
-   * changing the active key. Maps HTTP failures to plain Arabic
-   * explanations: wrong key, revoked/expired key, disabled key, quota.
+   * changing the active key. This mirrors the app's own failover:
+   * it tries the known models in order, because a 503 overload on
+   * one model does NOT mean the key is invalid — the app itself
+   * succeeds in that case by falling back to another model.
+   * Only 401/403 mean the key itself was rejected; 503/500 mean
+   * the service is busy and the key was NOT rejected.
    */
   suspend fun testApiKey(apiKey: String): Result<String> =
     withContext(Dispatchers.IO) {
@@ -290,19 +294,51 @@ class GeminiApiClient(
           ),
           generationConfig = GeminiGenerationConfig(temperature = 0f),
         )
-        val response = service.generateContent(model = "gemini-flash-latest", apiKey = key, request = request)
-        val text = response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
-        if (text.isNullOrBlank()) {
-          throw IllegalStateException("وصل الرد من Gemini لكنه كان فارغًا — أعد الاختبار.")
+        val models = listOf(
+          "gemini-3.5-flash",
+          "gemini-flash-latest",
+          "gemini-3.1-flash-lite-preview",
+        )
+        var lastHttpCode: Int? = null
+        var lastError: Throwable? = null
+        for ((index, modelId) in models.withIndex()) {
+          try {
+            val response = service.generateContent(model = modelId, apiKey = key, request = request)
+            val text = response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
+            if (!text.isNullOrBlank()) {
+              return@runCatching "نجح الاختبار — المفتاح صالح ويعمل مع Gemini."
+            }
+            lastError = IllegalStateException("وصل الرد من Gemini لكنه كان فارغًا — أعد الاختبار.")
+          } catch (ce: CancellationException) {
+            throw ce
+          } catch (he: HttpException) {
+            val code = he.code()
+            if (code == 401 || code == 403) {
+              // Auth failures are key failures, not model failures: stop here.
+              throw IllegalStateException(keyTestErrorMessage(code))
+            }
+            if (code == 429) {
+              throw IllegalStateException(keyTestErrorMessage(code))
+            }
+            // 404/500/502/503/504: try the next model, like the app does.
+            lastHttpCode = code
+            lastError = he
+            if (index < models.lastIndex) {
+              delay(700L)
+              continue
+            }
+          } catch (ioe: IOException) {
+            throw IllegalStateException(
+              "تعذر الاتصال بـ Gemini — تحقق من اتصال الإنترنت ثم أعد الاختبار.",
+            )
+          }
         }
-        "نجح الاختبار — المفتاح صالح ويعمل مع Gemini."
-      }.recoverCatching { error ->
-        when (error) {
-          is HttpException -> throw IllegalStateException(keyTestErrorMessage(error.code()))
-          is IOException -> throw IllegalStateException(
-            "تعذر الاتصال بـ Gemini — تحقق من اتصال الإنترنت ثم أعد الاختبار.",
+        when (lastHttpCode) {
+          503, 500, 502, 504 -> throw IllegalStateException(
+            "خدمة Gemini مشغولة مؤقتًا (HTTP $lastHttpCode) — لم يُرفض مفتاحك، " +
+              "والتطبيق نفسه ينجح في هذه الحالة بتجربة نماذج بديلة. أعد الاختبار بعد قليل.",
           )
-          else -> throw error
+          else -> throw (lastError ?: IllegalStateException("فشل الاختبار — أعد المحاولة."))
         }
       }
     }

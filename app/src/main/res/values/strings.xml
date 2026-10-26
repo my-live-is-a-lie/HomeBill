@@ -16,6 +16,7 @@
     <string name="nav_scan">مسح فاتورة</string>
     <string name="nav_analytics">الإحصائيات</string>
     <string name="nav_assistant">المساعد</string>
+    <string name="nav_settings">الإعدادات</string>
 
     <!-- Utility Types -->
     <string name="utility_gas">الغاز</string>

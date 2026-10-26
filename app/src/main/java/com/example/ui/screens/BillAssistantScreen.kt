@@ -240,7 +240,14 @@ fun BillAssistantScreen(
         itemsIndexed(messages, key = { _, msg -> msg.id }) { index, msg ->
           val isLatestAssistant = !msg.isUser && index == messages.lastIndex && !isTyping
           if (msg.isUser) {
-            UserChatBubble(text = msg.text)
+            UserChatBubble(
+              text = msg.text,
+              timestampMillis = msg.timestampMillis,
+              onCopyClick = {
+                clipboardManager.setText(AnnotatedString(msg.text))
+                Toast.makeText(context, copiedToastText, Toast.LENGTH_SHORT).show()
+              },
+            )
           } else {
             AssistantChatCard(
               message = msg,
@@ -257,6 +264,7 @@ fun BillAssistantScreen(
                 Toast.makeText(context, copiedToastText, Toast.LENGTH_SHORT).show()
               },
               onOpenSettings = onOpenSettings,
+              timestampMillis = msg.timestampMillis,
             )
           }
         }
@@ -337,30 +345,69 @@ fun BillAssistantScreen(
   }
 }
 
+
+private fun formatRelativeTime(timestampMillis: Long): String {
+  val diffMinutes = ((System.currentTimeMillis() - timestampMillis) / 60_000L).coerceAtLeast(0L)
+  return when {
+    diffMinutes < 1L -> "الآن"
+    diffMinutes == 1L -> "منذ دقيقة"
+    diffMinutes == 2L -> "منذ دقيقتين"
+    diffMinutes < 11L -> "منذ $diffMinutes دقائق"
+    diffMinutes < 60L -> "منذ $diffMinutes دقيقة"
+    diffMinutes < 120L -> "منذ ساعة"
+    diffMinutes < 1440L -> "منذ ${diffMinutes / 60L} ساعة"
+    else -> "منذ ${diffMinutes / 1440L} يوم"
+  }
+}
+
 @Composable
-private fun UserChatBubble(text: String) {
-  Row(
+private fun UserChatBubble(
+  text: String,
+  timestampMillis: Long,
+  onCopyClick: () -> Unit,
+) {
+  Column(
     modifier = Modifier.fillMaxWidth(),
-    horizontalArrangement = Arrangement.Start,
+    horizontalAlignment = Alignment.Start,
   ) {
-    Surface(
-      color = MaterialTheme.colorScheme.primary,
-      contentColor = MaterialTheme.colorScheme.onPrimary,
-      shape =
-        RoundedCornerShape(
-          topStart = 20.dp,
-          topEnd = 6.dp,
-          bottomStart = 20.dp,
-          bottomEnd = 20.dp,
-        ),
-      modifier = Modifier.widthIn(max = 520.dp),
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      horizontalArrangement = Arrangement.Start,
+      verticalAlignment = Alignment.CenterVertically,
     ) {
-      Text(
-        text = text,
-        style = MaterialTheme.typography.bodyLarge,
-        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-      )
+      Surface(
+        color = MaterialTheme.colorScheme.primary,
+        contentColor = MaterialTheme.colorScheme.onPrimary,
+        shape =
+          RoundedCornerShape(
+            topStart = 20.dp,
+            topEnd = 6.dp,
+            bottomStart = 20.dp,
+            bottomEnd = 20.dp,
+          ),
+        modifier = Modifier.widthIn(max = 520.dp),
+      ) {
+        Text(
+          text = text,
+          style = MaterialTheme.typography.bodyLarge,
+          modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        )
+      }
+      IconButton(onClick = onCopyClick, modifier = Modifier.size(36.dp)) {
+        Icon(
+          imageVector = Icons.Default.ContentCopy,
+          contentDescription = "نسخ الرسالة",
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.size(17.dp),
+        )
+      }
     }
+    Text(
+      text = formatRelativeTime(timestampMillis),
+      style = MaterialTheme.typography.labelSmall,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.padding(start = 4.dp, top = 2.dp),
+    )
   }
 }
 
@@ -374,6 +421,7 @@ private fun AssistantChatCard(
   onRetryClick: () -> Unit,
   onCopyClick: () -> Unit,
   onOpenSettings: () -> Unit = {},
+  timestampMillis: Long,
 ) {
   Column(
     modifier = Modifier.fillMaxWidth(),
@@ -455,6 +503,18 @@ private fun AssistantChatCard(
               MaterialTheme.colorScheme.onErrorContainer
             } else {
               MaterialTheme.colorScheme.onSurface
+            },
+        )
+
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+          text = formatRelativeTime(timestampMillis),
+          style = MaterialTheme.typography.labelSmall,
+          color =
+            if (message.isError) {
+              MaterialTheme.colorScheme.onErrorContainer
+            } else {
+              MaterialTheme.colorScheme.onSurfaceVariant
             },
         )
 

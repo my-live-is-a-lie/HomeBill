@@ -27,6 +27,8 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.Button
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -51,6 +53,9 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.data.remote.GeminiApiClient
+import com.example.ui.viewmodel.ChatImportResult
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.example.data.remote.UserGeminiKeyStore
 import kotlinx.coroutines.launch
 
@@ -61,17 +66,62 @@ import kotlinx.coroutines.launch
  * tapping the AI entry below, not directly on the hub.
  */
 @Composable
-fun SettingsScreen() {
+fun SettingsScreen(
+  onExportChats: () -> String = { "" },
+  onImportChats: (String) -> ChatImportResult = { ChatImportResult(0, 0) },
+) {
   var showAiKeys by remember { mutableStateOf(false) }
   if (showAiKeys) {
     GeminiKeysScreen(onBack = { showAiKeys = false })
   } else {
-    SettingsHubScreen(onOpenAiKeys = { showAiKeys = true })
+    SettingsHubScreen(
+      onOpenAiKeys = { showAiKeys = true },
+      onExportChats = onExportChats,
+      onImportChats = onImportChats,
+    )
   }
 }
 
 @Composable
-private fun SettingsHubScreen(onOpenAiKeys: () -> Unit) {
+private fun SettingsHubScreen(
+  onOpenAiKeys: () -> Unit,
+  onExportChats: () -> String,
+  onImportChats: (String) -> ChatImportResult,
+) {
+  var pendingExportJson by remember { mutableStateOf<String?>(null) }
+  val exportLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+      val json = pendingExportJson
+      pendingExportJson = null
+      if (uri != null && json != null) {
+        runCatching {
+          context.contentResolver.openOutputStream(uri)?.use { stream ->
+            stream.write(json.toByteArray(Charsets.UTF_8))
+          }
+        }
+      }
+    }
+  val importLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+      if (uri == null) return@rememberLauncherForActivityResult
+      val json = runCatching {
+        context.contentResolver.openInputStream(uri)?.use { stream ->
+          stream.readBytes().toString(Charsets.UTF_8)
+        }
+      }.getOrNull()
+      if (json.isNullOrBlank()) {
+        Toast.makeText(context, "لم يتم استيراد أي محادثة", Toast.LENGTH_SHORT).show()
+        return@rememberLauncherForActivityResult
+      }
+      val result = onImportChats(json)
+      val message =
+        if (result.imported == 0 && result.skipped == 0) {
+          "لم يتم استيراد أي محادثة — تأكد من أن الملف نسخة احتياطية صحيحة"
+        } else {
+          "تم استيراد ${result.imported} محادثة، وتخطي ${result.skipped} مكررة"
+        }
+      Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    }
   val context = LocalContext.current
   val keys = UserGeminiKeyStore.getKeys(context)
   val names = UserGeminiKeyStore.getNames(context)
@@ -105,10 +155,35 @@ private fun SettingsHubScreen(onOpenAiKeys: () -> Unit) {
         }
       }
     }
-    Text(
-      text = "ستظهر هنا إعدادات أخرى مستقبلًا.",
-      style = MaterialTheme.typography.bodySmall,
-    )
+    Card(modifier = Modifier.fillMaxWidth()) {
+      Column(
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+      ) {
+        Text(text = "النسخ الاحتياطي للمحادثات", style = MaterialTheme.typography.titleMedium)
+        Text(
+          text = "صدّر جميع محادثاتك المحفوظة إلى ملف JSON، أو استعد نسخة احتياطية سابقة. المحادثات المؤقتة والمسودات التي لم تصلها ردود بعد لا تُصدَّر.",
+          style = MaterialTheme.typography.bodyMedium,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+          Button(
+            onClick = {
+              pendingExportJson = onExportChats()
+              exportLauncher.launch("homebill-chats-backup.json")
+            },
+          ) {
+            Icon(imageVector = Icons.Default.Download, contentDescription = null)
+            Spacer(modifier = Modifier.size(6.dp))
+            Text(text = "تصدير")
+          }
+          OutlinedButton(onClick = { importLauncher.launch("application/json") }) {
+            Icon(imageVector = Icons.Default.Upload, contentDescription = null)
+            Spacer(modifier = Modifier.size(6.dp))
+            Text(text = "استيراد")
+          }
+        }
+      }
+    }
   }
 }
 

@@ -45,8 +45,8 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PushPin
@@ -95,6 +95,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalClipboardManager
 import kotlinx.coroutines.launch
@@ -135,8 +138,6 @@ fun BillAssistantScreen(
   onRenameConversation: (String, String) -> Unit = { _, _ -> },
   onTogglePin: (String) -> Unit = {},
   onDeleteConversation: (String) -> Unit = {},
-  onExportAllConversations: () -> String = { "" },
-  onImportConversations: (String) -> ChatImportResult = { ChatImportResult(0, 0) },
   onSetConversationModel: (String, String?) -> Unit = { _, _ -> },
   onSetConversationThinkingLevel: (String, String?) -> Unit = { _, _ -> },
   isTemporaryChat: Boolean = false,
@@ -150,41 +151,6 @@ fun BillAssistantScreen(
   val scope = rememberCoroutineScope()
   var showModelMenu by remember { mutableStateOf(false) }
   var thinkingExpanded by remember { mutableStateOf(false) }
-  var pendingExportJson by remember { mutableStateOf<String?>(null) }
-  val exportLauncher =
-    rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-      val json = pendingExportJson
-      pendingExportJson = null
-      if (uri != null && json != null) {
-        runCatching {
-          context.contentResolver.openOutputStream(uri)?.use { stream ->
-            stream.write(json.toByteArray(Charsets.UTF_8))
-          }
-        }
-      }
-    }
-  val importLauncher =
-    rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-      if (uri == null) return@rememberLauncherForActivityResult
-      val json = runCatching {
-        context.contentResolver.openInputStream(uri)?.use { stream ->
-          stream.readBytes().toString(Charsets.UTF_8)
-        }
-      }.getOrNull()
-      if (json.isNullOrBlank()) {
-        Toast.makeText(context, "لم يتم استيراد أي محادثة", Toast.LENGTH_SHORT).show()
-        return@rememberLauncherForActivityResult
-      }
-      val result = onImportConversations(json)
-      val message =
-        if (result.imported == 0 && result.skipped == 0) {
-          "لم يتم استيراد أي محادثة — تأكد من أن الملف نسخة احتياطية صحيحة"
-        } else {
-          "تم استيراد ${result.imported} محادثة، وتخطي ${result.skipped} مكررة"
-        }
-      Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
-    }
-
   LaunchedEffect(messages.size, isTyping) {
     val totalItems = messages.size + if (isTyping) 1 else 0
     if (totalItems > 0) {
@@ -239,11 +205,6 @@ fun BillAssistantScreen(
           onRename = onRenameConversation,
           onTogglePin = onTogglePin,
           onDelete = onDeleteConversation,
-          onExportAll = {
-            pendingExportJson = onExportAllConversations()
-            exportLauncher.launch("homebill-chats-backup.json")
-          },
-          onImport = { importLauncher.launch("application/json") },
           onClose = { scope.launch { drawerState.close() } },
         )
       }
@@ -304,8 +265,9 @@ fun BillAssistantScreen(
               currentThinkingLevel = activeConversation?.thinkingLevel,
               onDismiss = { showModelMenu = false },
               onModelSelected = { modelId ->
+                // Gemini's picker stays open after a model is picked, so the
+                // thinking level below remains visible in the same menu.
                 activeConversation?.let { onSetConversationModel(it.id, modelId) }
-                showModelMenu = false
               },
               onThinkingLevelSelected = { level ->
                 activeConversation?.let { onSetConversationThinkingLevel(it.id, level) }
@@ -317,13 +279,10 @@ fun BillAssistantScreen(
         },
         actions = {
           IconButton(
-            onClick = onCreateConversation,
-            modifier = Modifier.testTag("new_chat_button"),
+            onClick = onTemporaryChat,
+            modifier = Modifier.testTag("temporary_chat_button"),
           ) {
-            Icon(
-              imageVector = Icons.Default.Edit,
-              contentDescription = "محادثة جديدة",
-            )
+            TempChatIcon()
           }
         },
         colors =
@@ -499,6 +458,35 @@ private fun formatRelativeTime(timestampMillis: Long): String {
   }
 }
 
+/**
+ * Gemini's temporary-chat mark: a pencil inside a dashed circle, as in the
+ * Gemini app's top bar. The top-bar button now opens a temporary chat.
+ */
+@Composable
+private fun TempChatIcon() {
+  val circleColor = MaterialTheme.colorScheme.onSurface
+  Box(
+    modifier =
+      Modifier.size(24.dp).drawBehind {
+        drawCircle(
+          color = circleColor,
+          style =
+            Stroke(
+              width = 1.5.dp.toPx(),
+              pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 4f), 0f),
+            ),
+        )
+      },
+    contentAlignment = Alignment.Center,
+  ) {
+    Icon(
+      imageVector = Icons.Default.Edit,
+      contentDescription = "دردشة مؤقتة",
+      modifier = Modifier.size(15.dp),
+    )
+  }
+}
+
 private fun modelLabel(modelId: String?): String =
   when (modelId) {
     "gemini-3.8-flash" -> "Flash 3.8"
@@ -642,14 +630,31 @@ private fun AssistantHistoryDrawer(
   onRename: (String, String) -> Unit,
   onTogglePin: (String) -> Unit,
   onDelete: (String) -> Unit,
-  onExportAll: () -> Unit,
-  onImport: () -> Unit,
   onClose: () -> Unit,
 ) {
   var renameTarget by remember { mutableStateOf<ChatConversation?>(null) }
   var renameText by remember { mutableStateOf("") }
   var deleteTarget by remember { mutableStateOf<ChatConversation?>(null) }
   var overflowId by remember { mutableStateOf<String?>(null) }
+  var searchQuery by remember { mutableStateOf("") }
+  var sortMode by remember { mutableStateOf(0) } // 0 = الأحدث، 1 = الأقدم، 2 = الاسم
+  var showSortMenu by remember { mutableStateOf(false) }
+
+  // Pinned conversations stay on top in every sort mode; the mode orders
+  // within the pinned and unpinned groups.
+  val displayedConversations =
+    conversations
+      .filter { searchQuery.isBlank() || it.title.contains(searchQuery, ignoreCase = true) }
+      .sortedWith(
+        compareByDescending<ChatConversation> { it.pinned }
+          .thenComparator { a, b ->
+            when (sortMode) {
+              1 -> a.updatedAtMillis.compareTo(b.updatedAtMillis)
+              2 -> a.title.compareTo(b.title)
+              else -> b.updatedAtMillis.compareTo(a.updatedAtMillis)
+            }
+          },
+      )
 
   Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -686,10 +691,53 @@ private fun AssistantHistoryDrawer(
     Spacer(modifier = Modifier.height(8.dp))
     HorizontalDivider()
     Spacer(modifier = Modifier.height(8.dp))
-    Text(
-      text = "المحادثات",
-      style = MaterialTheme.typography.titleSmall,
-      fontWeight = FontWeight.Bold,
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      Text(
+        text = "المحادثات",
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.weight(1f),
+      )
+      Box {
+        IconButton(onClick = { showSortMenu = true }) {
+          Icon(imageVector = Icons.Default.Sort, contentDescription = "فرز المحادثات")
+        }
+        DropdownMenu(
+          expanded = showSortMenu,
+          onDismissRequest = { showSortMenu = false },
+        ) {
+          listOf("الأحدث أولًا", "الأقدم أولًا", "الاسم (أ – ي)").forEachIndexed { index, label ->
+            DropdownMenuItem(
+              text = { Text(text = label) },
+              leadingIcon = {
+                if (sortMode == index) {
+                  Icon(imageVector = Icons.Default.Check, contentDescription = null)
+                }
+              },
+              onClick = {
+                sortMode = index
+                showSortMenu = false
+              },
+            )
+          }
+        }
+      }
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+    OutlinedTextField(
+      value = searchQuery,
+      onValueChange = { searchQuery = it },
+      placeholder = { Text(text = "بحث في المحادثات") },
+      leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = null) },
+      trailingIcon = {
+        if (searchQuery.isNotEmpty()) {
+          IconButton(onClick = { searchQuery = "" }) {
+            Icon(imageVector = Icons.Default.Close, contentDescription = "مسح البحث")
+          }
+        }
+      },
+      singleLine = true,
+      modifier = Modifier.fillMaxWidth(),
     )
     Spacer(modifier = Modifier.height(8.dp))
     if (conversations.isEmpty()) {
@@ -698,12 +746,18 @@ private fun AssistantHistoryDrawer(
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )
+    } else if (displayedConversations.isEmpty()) {
+      Text(
+        text = "لا نتائج مطابقة للبحث",
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
     } else {
       LazyColumn(
         modifier = Modifier.weight(1f),
         verticalArrangement = Arrangement.spacedBy(4.dp),
       ) {
-        items(conversations, key = { it.id }) { conversation ->
+        items(displayedConversations, key = { it.id }) { conversation ->
           Box {
             Row(verticalAlignment = Alignment.CenterVertically) {
               NavigationDrawerItem(
@@ -781,21 +835,6 @@ private fun AssistantHistoryDrawer(
         }
       }
     }
-    Spacer(modifier = Modifier.height(8.dp))
-    HorizontalDivider()
-    Spacer(modifier = Modifier.height(8.dp))
-    NavigationDrawerItem(
-      label = { Text(text = stringResource(R.string.chat_history_export)) },
-      selected = false,
-      onClick = onExportAll,
-      icon = { Icon(imageVector = Icons.Default.Download, contentDescription = null) },
-    )
-    NavigationDrawerItem(
-      label = { Text(text = stringResource(R.string.chat_history_import)) },
-      selected = false,
-      onClick = onImport,
-      icon = { Icon(imageVector = Icons.Default.Upload, contentDescription = null) },
-    )
   }
 
   val renameConversation = renameTarget

@@ -191,7 +191,7 @@ fun AuthenticatedAppShell(currentUserId: String) {
     val isExpanded = maxWidth >= 600.dp
 
     Scaffold(
-      contentWindowInsets = WindowInsets.systemBars,
+      contentWindowInsets = WindowInsets(0, 0, 0, 0),
       snackbarHost = { SnackbarHost(snackbarHostState) },
       bottomBar = {
         if (!isExpanded && showPrimaryNav) {

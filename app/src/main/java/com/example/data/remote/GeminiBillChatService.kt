@@ -98,6 +98,12 @@ class GeminiBillChatService(
     categories: List<BillCategory>,
     allBills: List<BillRecord>,
     analyticsSummary: MonthlyAnalyticsSummary,
+    // Null = automatic (current failover order). A set value is tried first;
+    // the existing failover still applies to transient errors.
+    preferredModel: String? = null,
+    // Null = the model's own default thinking level. Otherwise "LOW",
+    // "MEDIUM" or "HIGH", as chosen per conversation in the model settings.
+    thinkingLevel: String? = null,
   ): Result<BillChatAiReplyDto> =
     withContext(Dispatchers.IO) {
       runCatching {
@@ -138,10 +144,11 @@ class GeminiBillChatService(
               GeminiGenerationConfig(
                 responseMimeType = "application/json",
                 temperature = 0.3f,
+                thinkingConfig = thinkingLevel?.let { GeminiThinkingConfig(thinkingLevel = it) },
               ),
           )
 
-        val candidateModels = buildOrderedCandidateModels()
+        val candidateModels = buildOrderedCandidateModels(preferredModel)
         var lastError: Throwable? = null
 
         for ((index, modelId) in candidateModels.withIndex()) {
@@ -184,7 +191,9 @@ class GeminiBillChatService(
             delay(1000L)
             val plainRequest =
               jsonRequest.copy(
-                generationConfig = GeminiGenerationConfig(temperature = 0.35f),
+                // Keep the JSON mime type and thinking level, only soften
+                // the temperature for this last-resort attempt.
+                generationConfig = jsonRequest.generationConfig?.copy(temperature = 0.35f),
               )
             val response =
               api.generateChatReply(model = fallbackModel, apiKey = apiKey, request = plainRequest)
@@ -205,7 +214,10 @@ class GeminiBillChatService(
       }
     }
 
-  private fun buildOrderedCandidateModels(): List<String> {
+  private fun buildOrderedCandidateModels(preferredModel: String? = null): List<String> {
+    if (preferredModel != null && preferredModel in SUPPORTED_CHAT_MODELS) {
+      return listOf(preferredModel) + SUPPORTED_CHAT_MODELS.filterNot { it == preferredModel }
+    }
     val sticky = lastHealthyChatModel
     return if (sticky != null && sticky in SUPPORTED_CHAT_MODELS) {
       listOf(sticky) + SUPPORTED_CHAT_MODELS.filterNot { it == sticky }
@@ -404,6 +416,7 @@ class GeminiBillChatService(
     // Strictly approved Gemini models from gemini-api skill in priority failover order
     private val SUPPORTED_CHAT_MODELS =
       listOf(
+        "gemini-3.8-flash",
         "gemini-3.5-flash",
         "gemini-flash-latest",
         "gemini-3.1-flash-lite-preview",

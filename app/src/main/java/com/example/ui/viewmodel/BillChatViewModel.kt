@@ -52,6 +52,12 @@ class BillChatViewModel(
   private val _isTemporaryChat = MutableStateFlow(false)
   val isTemporaryChat: StateFlow<Boolean> = _isTemporaryChat.asStateFlow()
 
+  // A draft is a new conversation that does NOT exist in the saved list yet:
+  // it joins _conversations (and disk) only after the first successful AI
+  // reply. Until then it behaves like a temporary chat — switching away
+  // discards it — so empty "محادثة جديدة" rows never clutter the list.
+  private var draftConversation: ChatConversation? = null
+
   private var historyLoaded = false
   private var lastConsumedInitialPrompt: String? = null
 
@@ -67,22 +73,55 @@ class BillChatViewModel(
     historyLoaded = true
     ChatHistoryStore.init(context, userId)
     val saved = ChatHistoryStore.load()
-    if (saved.isEmpty()) {
-      val fresh = newConversation()
-      publish(listOf(fresh), fresh.id)
+    // Drop saved conversations that never got a user message: they contain
+    // only the welcome card (created by the old "new chat" behaviour).
+    val pruned = saved.filter { conversation -> conversation.messages.any { it.isUser } }
+    if (pruned.size != saved.size) {
+      viewModelScope.launch(Dispatchers.IO) { ChatHistoryStore.save(pruned) }
+    }
+    if (pruned.isEmpty()) {
+      enterDraft()
     } else {
-      val sorted = sortConversations(saved)
+      val sorted = sortConversations(pruned)
       val active = sorted.firstOrNull { it.messages.isNotEmpty() } ?: sorted.first()
       publish(sorted, active.id)
     }
   }
 
+  /**
+   * Starts a new conversation as a DRAFT: it is not added to the saved list
+   * and not written to disk until the first successful AI reply (see
+   * [promoteDraft]). Tapping "new chat" repeatedly no longer creates empty
+   * rows in the drawer.
+   */
   fun createConversation() {
+    enterDraft()
+  }
+
+  private fun enterDraft() {
     discardTemporaryChat()
+    discardDraft()
     val fresh = newConversation()
+    draftConversation = fresh
     lastConsumedInitialPrompt = null
     _isTyping.value = false
-    publish(_conversations.value + fresh, fresh.id)
+    _activeConversation.value = fresh
+    _messages.value = fresh.messages
+  }
+
+  private fun discardDraft() {
+    draftConversation = null
+  }
+
+  private fun isDraftActive(): Boolean =
+    draftConversation != null && draftConversation?.id == _activeConversation.value?.id
+
+  /** Moves the active draft into the saved list after its first AI reply. */
+  private fun promoteDraft() {
+    val active = _activeConversation.value ?: return
+    if (!isDraftActive()) return
+    draftConversation = null
+    publish(_conversations.value + active, active.id)
     persist()
   }
 
@@ -92,6 +131,7 @@ class BillChatViewModel(
    * clear the active conversation now calls this instead.
    */
   fun enterTemporaryChat() {
+    discardDraft()
     val now = System.currentTimeMillis()
     val temp = ChatConversation(
       id = UUID.randomUUID().toString(),
@@ -118,8 +158,9 @@ class BillChatViewModel(
 
   fun selectConversation(conversationId: String) {
     if (!_isTemporaryChat.value && _activeConversation.value?.id == conversationId) return
-    // Leaving a temporary chat discards it, unsaved.
+    // Leaving a temporary or draft chat discards it, unsaved.
     discardTemporaryChat()
+    discardDraft()
     lastConsumedInitialPrompt = null
     _isTyping.value = false
     publish(_conversations.value, conversationId)
@@ -155,6 +196,15 @@ class BillChatViewModel(
     conversationId: String,
     transform: (ChatConversation) -> ChatConversation,
   ) {
+    val draft = draftConversation
+    if (draft != null && draft.id == conversationId) {
+      val updatedDraft = transform(draft)
+      draftConversation = updatedDraft
+      if (_activeConversation.value?.id == conversationId) {
+        _activeConversation.value = updatedDraft
+      }
+      return
+    }
     val temp = temporaryConversation
     if (_isTemporaryChat.value && temp != null && temp.id == conversationId) {
       val updatedTemp = transform(temp)
@@ -176,10 +226,7 @@ class BillChatViewModel(
     }
     val remaining = _conversations.value.filterNot { it.id == conversationId }
     if (remaining.isEmpty()) {
-      val fresh = newConversation()
-      lastConsumedInitialPrompt = null
-      _isTyping.value = false
-      publish(listOf(fresh), fresh.id)
+      enterDraft()
     } else {
       val sorted = sortConversations(remaining)
       lastConsumedInitialPrompt = null
@@ -244,7 +291,7 @@ class BillChatViewModel(
 
     val userMessage = BillChatMessage(isUser = true, text = trimmed)
     updateActiveMessages(cleanedMessages + userMessage, newUserPrompt = trimmed)
-    persist()
+    if (!isDraftActive()) persist()
     executeTurn(
       priorHistory = priorHistory,
       userPrompt = trimmed,
@@ -272,7 +319,7 @@ class BillChatViewModel(
         .map { it.isUser to it.text }
 
     updateActiveMessages(withoutErrors.subList(0, lastUserIndex + 1))
-    persist()
+    if (!isDraftActive()) persist()
     executeTurn(
       priorHistory = historyBeforeLastUser,
       userPrompt = lastUserMsg.text,
@@ -316,7 +363,11 @@ class BillChatViewModel(
               followUpSuggestions = dto.followUpSuggestions,
             )
           updateActiveMessages(_messages.value + aiMsg)
-          persist()
+          if (isDraftActive()) {
+            promoteDraft()
+          } else {
+            persist()
+          }
         }
         .onFailure { err ->
           val errorMsg =
@@ -337,6 +388,13 @@ class BillChatViewModel(
     val active = _activeConversation.value
     if (active == null) {
       _messages.value = listOf(createWelcomeMessage())
+      return
+    }
+    if (isDraftActive()) {
+      val resetDraft = active.copy(messages = listOf(createWelcomeMessage()), updatedAtMillis = System.currentTimeMillis())
+      draftConversation = resetDraft
+      _activeConversation.value = resetDraft
+      _messages.value = resetDraft.messages
       return
     }
     if (_isTemporaryChat.value) {
@@ -381,9 +439,11 @@ class BillChatViewModel(
    */
   private fun publish(list: List<ChatConversation>, activeId: String?) {
     // If the requested active id is not a saved conversation, it was the
-    // temporary chat: leaving it through a saved-list action discards it.
+    // temporary chat or a draft: leaving it through a saved-list action
+    // discards it.
     if (activeId != null && list.none { it.id == activeId }) {
       discardTemporaryChat()
+      discardDraft()
     }
     val sorted = sortConversations(list)
     _conversations.value = sorted
@@ -395,6 +455,18 @@ class BillChatViewModel(
   private fun updateActiveMessages(newMessages: List<BillChatMessage>, newUserPrompt: String? = null) {
     val active = _activeConversation.value
     if (active == null) {
+      _messages.value = newMessages
+      return
+    }
+    if (isDraftActive()) {
+      // Drafts are not in the saved list yet: keep them in memory only until
+      // the first AI reply promotes them.
+      var updatedDraft = active.copy(messages = newMessages, updatedAtMillis = System.currentTimeMillis())
+      if (newUserPrompt != null && active.title == "محادثة جديدة") {
+        updatedDraft = updatedDraft.copy(title = ChatHistoryStore.defaultTitle(newMessages))
+      }
+      draftConversation = updatedDraft
+      _activeConversation.value = updatedDraft
       _messages.value = newMessages
       return
     }

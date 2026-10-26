@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TipsAndUpdates
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AssistChip
@@ -95,6 +96,7 @@ fun BillAssistantScreen(
   onSendMessage: (String) -> Unit,
   onRetryLastMessage: () -> Unit,
   onClearChat: () -> Unit,
+  onOpenSettings: () -> Unit = {},
 ) {
   var inputText by rememberSaveable { mutableStateOf("") }
   val listState = rememberLazyListState()
@@ -254,6 +256,7 @@ fun BillAssistantScreen(
                 clipboardManager.setText(AnnotatedString(msg.text))
                 Toast.makeText(context, copiedToastText, Toast.LENGTH_SHORT).show()
               },
+              onOpenSettings = onOpenSettings,
             )
           }
         }
@@ -370,6 +373,7 @@ private fun AssistantChatCard(
   onSuggestionClick: (String) -> Unit,
   onRetryClick: () -> Unit,
   onCopyClick: () -> Unit,
+  onOpenSettings: () -> Unit = {},
 ) {
   Column(
     modifier = Modifier.fillMaxWidth(),
@@ -471,6 +475,23 @@ private fun AssistantChatCard(
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(stringResource(R.string.assistant_retry_button))
+          }
+          Spacer(modifier = Modifier.height(8.dp))
+          OutlinedButton(
+            onClick = onOpenSettings,
+            colors =
+              ButtonDefaults.outlinedButtonColors(
+                contentColor = MaterialTheme.colorScheme.onErrorContainer
+              ),
+            modifier = Modifier.height(48.dp).testTag("open_settings_button"),
+          ) {
+            Icon(
+              imageVector = Icons.Default.Settings,
+              contentDescription = null,
+              modifier = Modifier.size(18.dp),
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("الذهاب إلى الإعدادات")
           }
         }
 

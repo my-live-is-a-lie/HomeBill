@@ -191,11 +191,13 @@ fun AuthenticatedAppShell(currentUserId: String) {
     val isExpanded = maxWidth >= 600.dp
 
     Scaffold(
-      contentWindowInsets = WindowInsets(0, 0, 0, 0),
+      contentWindowInsets = WindowInsets.safeDrawing,
       snackbarHost = { SnackbarHost(snackbarHostState) },
       bottomBar = {
         if (!isExpanded && showPrimaryNav) {
-          NavigationBar {
+          NavigationBar(
+            containerColor = MaterialTheme.colorScheme.background,
+          ) {
             NavigationBarItem(
               selected = isDashboard,
               onClick = {
@@ -294,7 +296,10 @@ fun AuthenticatedAppShell(currentUserId: String) {
     ) { scaffoldPadding ->
       Row(modifier = Modifier.fillMaxSize().padding(scaffoldPadding)) {
         if (isExpanded && showPrimaryNav) {
-          NavigationRail(modifier = Modifier.fillMaxHeight()) {
+          NavigationRail(
+            modifier = Modifier.fillMaxHeight(),
+            containerColor = MaterialTheme.colorScheme.background,
+          ) {
             NavigationRailItem(
               selected = isDashboard,
               onClick = {

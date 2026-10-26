@@ -17,9 +17,11 @@ import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.DocumentScanner
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.BarChart
 import androidx.compose.material.icons.outlined.DocumentScanner
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -62,6 +64,7 @@ import com.example.ui.screens.BillAssistantScreen
 import com.example.ui.screens.CategoryDetailScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.ScannerScreen
+import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.BillChatViewModel
 import com.example.ui.viewmodel.HomeBillsViewModel
@@ -80,8 +83,11 @@ import kotlinx.serialization.Serializable
 
 @Serializable data class CategoryDetailRoute(val categoryId: String)
 
+@Serializable data object SettingsRoute
+
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
+    com.example.data.remote.UserGeminiKeyStore.init(this)
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     setContent {
@@ -175,7 +181,8 @@ fun AuthenticatedAppShell(currentUserId: String) {
   val isScanner = currentDest?.hasRoute<ScannerRoute>() == true
   val isAnalytics = currentDest?.hasRoute<AnalyticsRoute>() == true
   val isAssistant = currentDest?.hasRoute<AssistantRoute>() == true
-  val showPrimaryNav = isDashboard || isScanner || isAnalytics || isAssistant
+  val isSettings = currentDest?.hasRoute<SettingsRoute>() == true
+  val showPrimaryNav = isDashboard || isScanner || isAnalytics || isAssistant || isSettings
 
   val categories = (categoriesState as? UiState.Success)?.data.orEmpty()
   val allBills = (allBillsState as? UiState.Success)?.data.orEmpty()
@@ -264,6 +271,23 @@ fun AuthenticatedAppShell(currentUserId: String) {
               label = { Text(stringResource(R.string.nav_assistant)) },
               modifier = Modifier.testTag("nav_assistant_tab"),
             )
+            NavigationBarItem(
+              selected = isSettings,
+              onClick = {
+                navController.navigate(SettingsRoute) {
+                  popUpTo(DashboardRoute) { inclusive = false }
+                  launchSingleTop = true
+                }
+              },
+              icon = {
+                Icon(
+                  imageVector = if (isSettings) Icons.Filled.Settings else Icons.Outlined.Settings,
+                  contentDescription = stringResource(R.string.nav_settings),
+                )
+              },
+              label = { Text(stringResource(R.string.nav_settings)) },
+              modifier = Modifier.testTag("nav_settings_tab"),
+            )
           }
         }
       },
@@ -341,6 +365,22 @@ fun AuthenticatedAppShell(currentUserId: String) {
                 )
               },
               label = { Text(stringResource(R.string.nav_assistant)) },
+            )
+            NavigationRailItem(
+              selected = isSettings,
+              onClick = {
+                navController.navigate(SettingsRoute) {
+                  popUpTo(DashboardRoute) { inclusive = false }
+                  launchSingleTop = true
+                }
+              },
+              icon = {
+                Icon(
+                  imageVector = if (isSettings) Icons.Filled.Settings else Icons.Outlined.Settings,
+                  contentDescription = stringResource(R.string.nav_settings),
+                )
+              },
+              label = { Text(stringResource(R.string.nav_settings)) },
             )
           }
         }
@@ -479,6 +519,10 @@ fun AuthenticatedAppShell(currentUserId: String) {
                   navController.navigate(CategoryDetailRoute(catId))
                 },
               )
+            }
+
+            composable<SettingsRoute> {
+              SettingsScreen()
             }
 
             composable<CategoryDetailRoute> { entry ->

@@ -153,8 +153,9 @@ fun CameraXBillCaptureDialog(
   ) {
     BackHandler(onBack = onDismiss)
 
-    val frameAccentColor = MaterialTheme.colorScheme.secondaryContainer
-    val scrimColor = MaterialTheme.colorScheme.scrim.copy(alpha = 0.72f)
+    val frameAccentColor = androidx.compose.ui.graphics.Color.White
+    // Translucent, not an opaque black bar: white text/icons stay readable over the preview.
+    val scrimColor = androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.45f)
 
     Box(
       modifier =
@@ -176,7 +177,7 @@ fun CameraXBillCaptureDialog(
           Text(
             text = cameraError.orEmpty(),
             style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.inverseOnSurface,
+            color = androidx.compose.ui.graphics.Color.White,
             textAlign = TextAlign.Center,
           )
           Spacer(modifier = Modifier.height(16.dp))
@@ -189,7 +190,7 @@ fun CameraXBillCaptureDialog(
           ) {
             Text(
               text = stringResource(R.string.camerax_system_camera_fallback),
-              color = MaterialTheme.colorScheme.inverseOnSurface,
+              color = androidx.compose.ui.graphics.Color.White,
             )
           }
         }
@@ -213,7 +214,7 @@ fun CameraXBillCaptureDialog(
             colors =
               IconButtonDefaults.filledIconButtonColors(
                 containerColor = scrimColor,
-                contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                contentColor = androidx.compose.ui.graphics.Color.White,
               ),
             modifier = Modifier.size(48.dp).testTag("camerax_close_button"),
           ) {
@@ -231,7 +232,7 @@ fun CameraXBillCaptureDialog(
             Text(
               text = stringResource(R.string.camerax_guide_hint),
               style = MaterialTheme.typography.labelMedium,
-              color = MaterialTheme.colorScheme.inverseOnSurface,
+              color = androidx.compose.ui.graphics.Color.White,
               textAlign = TextAlign.Center,
               modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             )
@@ -250,7 +251,7 @@ fun CameraXBillCaptureDialog(
             colors =
               IconButtonDefaults.filledIconButtonColors(
                 containerColor = scrimColor,
-                contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+                contentColor = androidx.compose.ui.graphics.Color.White,
               ),
             modifier = Modifier.size(48.dp).testTag("camerax_flash_button"),
           ) {
@@ -337,7 +338,7 @@ fun CameraXBillCaptureDialog(
             Text(
               text = stringResource(R.string.camerax_system_camera_fallback),
               style = MaterialTheme.typography.labelLarge,
-              color = MaterialTheme.colorScheme.inverseOnSurface,
+              color = androidx.compose.ui.graphics.Color.White,
             )
           }
         }

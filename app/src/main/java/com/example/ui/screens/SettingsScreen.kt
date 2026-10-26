@@ -24,10 +24,13 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -150,13 +153,36 @@ private fun GeminiKeysScreen(onBack: () -> Unit) {
       }
       Text(text = "مفاتيح Gemini", style = MaterialTheme.typography.titleLarge)
     }
-    Text(
-      text = "أضف مفتاح Gemini الخاص بك قبل استخدام قراءة الفواتير والمساعد الذكي. " +
-        "المفاتيح تُحفظ على جهازك فقط، ولا تُرسل إلى خادم، ولا تُرفع إلى GitHub، " +
-        "وحصتها من حسابك أنت في Google AI Studio. يمكنك إضافة أكثر من مفتاح " +
-        "واختيار أي واحد يُستخدم حاليًا، ويمكنك اختبار المفتاح قبل إضافته.",
-      style = MaterialTheme.typography.bodyMedium,
-    )
+    var showInfoDialog by remember { mutableStateOf(false) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      Text(
+        text = "أضف مفتاح Gemini الخاص بك لاستخدام الذكاء الاصطناعي.",
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier.weight(1f),
+      )
+      IconButton(onClick = { showInfoDialog = true }) {
+        Icon(imageVector = Icons.Default.Info, contentDescription = "معلومات عن مفاتيح Gemini")
+      }
+    }
+    if (showInfoDialog) {
+      AlertDialog(
+        onDismissRequest = { showInfoDialog = false },
+        title = { Text("معلومات عن مفاتيح Gemini") },
+        text = {
+          Text(
+            "المفاتيح تُحفظ على جهازك فقط، ولا تُرسل إلى خادم، ولا تُرفع إلى GitHub، " +
+              "وحصتها من حسابك أنت في Google AI Studio. يمكنك إضافة أكثر من مفتاح " +
+              "واختيار أي واحد يُستخدم حاليًا، ويمكنك اختبار المفتاح قبل إضافته، " +
+              "وتعديل اسمه وقيمته بالقلم، ونسخه أو حذفه في أي وقت.",
+          )
+        },
+        confirmButton = {
+          TextButton(onClick = { showInfoDialog = false }) {
+            Text("فهمت")
+          }
+        },
+      )
+    }
     OutlinedTextField(
       value = inputName,
       onValueChange = { inputName = it },
@@ -264,11 +290,17 @@ private fun GeminiKeysScreen(onBack: () -> Unit) {
           verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
           Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-              Text(text = displayName, style = MaterialTheme.typography.titleMedium)
-              if (isActive) {
-                Text(text = "مستخدم حاليًا", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
-              }
+            Text(
+              text = displayName,
+              style = MaterialTheme.typography.titleMedium,
+              modifier = Modifier.weight(1f),
+            )
+            if (isActive) {
+              Text(
+                text = "مستخدم حاليًا",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+              )
             }
             // Pencil on the left end of the row (RTL end) — edits name and key value.
             IconButton(
@@ -337,22 +369,19 @@ private fun GeminiKeysScreen(onBack: () -> Unit) {
             )
             // Icon row: test is FIRST, then show, copy, delete.
             Row(verticalAlignment = Alignment.CenterVertically) {
-              if (testingIndex == index) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-              } else {
-                IconButton(
-                  onClick = {
-                    testingIndex = index
-                    testResults = testResults - index
-                    scope.launch {
-                      val result = GeminiApiClient().testApiKey(key)
-                      testResults = testResults + (index to (result.isSuccess to (result.getOrNull() ?: result.exceptionOrNull()?.message ?: "فشل الاختبار.")))
-                      testingIndex = -1
-                    }
-                  },
-                ) {
-                  Icon(imageVector = Icons.Default.CheckCircle, contentDescription = "اختبار المفتاح", modifier = Modifier.size(22.dp))
-                }
+              OutlinedButton(
+                enabled = testingIndex != index,
+                onClick = {
+                  testingIndex = index
+                  testResults = testResults - index
+                  scope.launch {
+                    val result = GeminiApiClient().testApiKey(key)
+                    testResults = testResults + (index to (result.isSuccess to (result.getOrNull() ?: result.exceptionOrNull()?.message ?: "فشل الاختبار.")))
+                    testingIndex = -1
+                  }
+                },
+              ) {
+                Text(if (testingIndex == index) "جارٍ الاختبار..." else "اختبار المفتاح")
               }
               IconButton(
                 onClick = {

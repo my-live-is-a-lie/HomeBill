@@ -496,8 +496,6 @@ fun AuthenticatedAppShell(currentUserId: String) {
                 onRenameConversation = { id, title -> chatVm.renameConversation(id, title) },
                 onTogglePin = { chatVm.togglePin(it) },
                 onDeleteConversation = { chatVm.deleteConversation(it) },
-                onExportAllConversations = { chatVm.exportAllConversations() },
-                onImportConversations = { json -> chatVm.importConversations(json) },
                 onSetConversationModel = { id, modelId -> chatVm.setConversationModel(id, modelId) },
                 onSetConversationThinkingLevel = { id, level -> chatVm.setConversationThinkingLevel(id, level) },
                 onOpenSettings = {
@@ -554,7 +552,10 @@ fun AuthenticatedAppShell(currentUserId: String) {
             }
 
             composable<SettingsRoute> {
-              SettingsScreen()
+              SettingsScreen(
+                onExportChats = { chatVm.exportAllConversations() },
+                onImportChats = { json -> chatVm.importConversations(json) },
+              )
             }
 
             composable<CategoryDetailRoute> { entry ->

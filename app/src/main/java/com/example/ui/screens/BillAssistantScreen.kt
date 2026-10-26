@@ -39,11 +39,17 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.PushPin
-import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TipsAndUpdates
@@ -60,10 +66,16 @@ import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SuggestionChip
@@ -77,16 +89,18 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalClipboardManager
+import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -125,14 +139,17 @@ fun BillAssistantScreen(
   onImportConversations: (String) -> ChatImportResult = { ChatImportResult(0, 0) },
   onSetConversationModel: (String, String?) -> Unit = { _, _ -> },
   onSetConversationThinkingLevel: (String, String?) -> Unit = { _, _ -> },
+  isTemporaryChat: Boolean = false,
 ) {
   var inputText by rememberSaveable { mutableStateOf("") }
   val listState = rememberLazyListState()
   val clipboardManager = LocalClipboardManager.current
   val context = LocalContext.current
   val copiedToastText = stringResource(R.string.assistant_copied_toast)
-  var showHistory by remember { mutableStateOf(false) }
-  var showModelSettings by remember { mutableStateOf(false) }
+  val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+  val scope = rememberCoroutineScope()
+  var showModelMenu by remember { mutableStateOf(false) }
+  var thinkingExpanded by remember { mutableStateOf(false) }
   var pendingExportJson by remember { mutableStateOf<String?>(null) }
   val exportLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -199,35 +216,76 @@ fun BillAssistantScreen(
       ),
     )
 
-  Scaffold(
-    topBar = {
-      TopAppBar(
-        title = {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-              modifier =
-                Modifier.size(38.dp)
-                  .clip(CircleShape)
-                  .background(MaterialTheme.colorScheme.primaryContainer),
-              contentAlignment = Alignment.Center,
+  ModalNavigationDrawer(
+    drawerState = drawerState,
+    drawerContent = {
+      ModalDrawerSheet {
+        AssistantHistoryDrawer(
+          conversations = conversations,
+          activeConversationId = activeConversation?.id,
+          isTemporaryChat = isTemporaryChat,
+          onSelect = { id ->
+            onSelectConversation(id)
+            scope.launch { drawerState.close() }
+          },
+          onCreate = {
+            onCreateConversation()
+            scope.launch { drawerState.close() }
+          },
+          onTemporary = {
+            onTemporaryChat()
+            scope.launch { drawerState.close() }
+          },
+          onRename = onRenameConversation,
+          onTogglePin = onTogglePin,
+          onDelete = onDeleteConversation,
+          onExportAll = {
+            pendingExportJson = onExportAllConversations()
+            exportLauncher.launch("homebill-chats-backup.json")
+          },
+          onImport = { importLauncher.launch("application/json") },
+          onClose = { scope.launch { drawerState.close() } },
+        )
+      }
+    },
+  ) {
+    Scaffold(
+      topBar = {
+        TopAppBar(
+          navigationIcon = {
+            IconButton(
+              onClick = { scope.launch { drawerState.open() } },
+              modifier = Modifier.testTag("chat_drawer_button"),
             ) {
               Icon(
-                imageVector = Icons.Default.AutoAwesome,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp),
+                imageVector = Icons.Default.Menu,
+                contentDescription = "القائمة وسجل المحادثات",
               )
             }
-            Spacer(modifier = Modifier.width(10.dp))
+          },
+          title = {
+          Box {
             Column {
-              Text(
-                text = activeConversation?.title ?: stringResource(R.string.assistant_title),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-              )
+              Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.clickable { showModelMenu = true },
+              ) {
+                Text(
+                  text = modelLabel(activeConversation?.modelId),
+                  style = MaterialTheme.typography.titleMedium,
+                  fontWeight = FontWeight.Bold,
+                )
+                Icon(
+                  imageVector = Icons.Default.KeyboardArrowDown,
+                  contentDescription = null,
+                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
               Text(
                 text =
-                  if (allBills.isNotEmpty() || categories.isNotEmpty()) {
+                  if (isTemporaryChat) {
+                    "دردشة مؤقتة · لا تُحفظ"
+                  } else if (allBills.isNotEmpty() || categories.isNotEmpty()) {
                     stringResource(
                       R.string.assistant_live_context_badge,
                       allBills.size,
@@ -240,34 +298,31 @@ fun BillAssistantScreen(
                 color = MaterialTheme.colorScheme.primary,
               )
             }
+            GeminiModelMenu(
+              expanded = showModelMenu,
+              currentModelId = activeConversation?.modelId,
+              currentThinkingLevel = activeConversation?.thinkingLevel,
+              onDismiss = { showModelMenu = false },
+              onModelSelected = { modelId ->
+                activeConversation?.let { onSetConversationModel(it.id, modelId) }
+                showModelMenu = false
+              },
+              onThinkingLevelSelected = { level ->
+                activeConversation?.let { onSetConversationThinkingLevel(it.id, level) }
+              },
+              thinkingExpanded = thinkingExpanded,
+              onToggleThinking = { thinkingExpanded = !thinkingExpanded },
+            )
           }
         },
         actions = {
           IconButton(
-            onClick = { showHistory = true },
-            modifier = Modifier.testTag("chat_history_button"),
+            onClick = onCreateConversation,
+            modifier = Modifier.testTag("new_chat_button"),
           ) {
             Icon(
-              imageVector = Icons.Default.History,
-              contentDescription = "سجل المحادثات",
-            )
-          }
-          IconButton(
-            onClick = { showModelSettings = true },
-            modifier = Modifier.testTag("chat_model_settings_button"),
-          ) {
-            Icon(
-              imageVector = Icons.Default.Tune,
-              contentDescription = "إعدادات النموذج والتفكير",
-            )
-          }
-          IconButton(
-            onClick = onTemporaryChat,
-            modifier = Modifier.testTag("temporary_chat_button"),
-          ) {
-            Icon(
-              imageVector = Icons.Default.Add,
-              contentDescription = "دردشة مؤقتة جديدة",
+              imageVector = Icons.Default.Edit,
+              contentDescription = "محادثة جديدة",
             )
           }
         },
@@ -426,43 +481,6 @@ fun BillAssistantScreen(
     }
   }
 
-  if (showModelSettings) {
-    val currentConversation = activeConversation
-    ChatModelSettingsDialog(
-      currentModelId = currentConversation?.modelId,
-      currentThinkingLevel = currentConversation?.thinkingLevel,
-      onModelSelected = { modelId ->
-        currentConversation?.let { onSetConversationModel(it.id, modelId) }
-      },
-      onThinkingLevelSelected = { level ->
-        currentConversation?.let { onSetConversationThinkingLevel(it.id, level) }
-      },
-      onDismiss = { showModelSettings = false },
-    )
-  }
-
-  if (showHistory) {
-    ChatHistoryDialog(
-      conversations = conversations,
-      activeConversationId = activeConversation?.id,
-      onDismiss = { showHistory = false },
-      onSelect = { id ->
-        onSelectConversation(id)
-        showHistory = false
-      },
-      onCreate = {
-        onCreateConversation()
-        showHistory = false
-      },
-      onRename = onRenameConversation,
-      onTogglePin = onTogglePin,
-      onDelete = onDeleteConversation,
-      onExportAll = {
-        pendingExportJson = onExportAllConversations()
-        exportLauncher.launch("homebill-chats-backup.json")
-      },
-      onImport = { importLauncher.launch("application/json") },
-    )
   }
 }
 
@@ -481,278 +499,303 @@ private fun formatRelativeTime(timestampMillis: Long): String {
   }
 }
 
+private fun modelLabel(modelId: String?): String =
+  when (modelId) {
+    "gemini-3.8-flash" -> "Flash 3.8"
+    "gemini-3.5-flash" -> "Flash 3.5"
+    "gemini-flash-latest" -> "Flash الأحدث"
+    "gemini-3.1-flash-lite-preview" -> "Flash-Lite 3.1"
+    "gemini-3.1-pro-preview" -> "Pro 3.1"
+    else -> "تلقائي"
+  }
+
+private fun thinkingLabel(level: String?): String =
+  when (level) {
+    "LOW" -> "منخفض"
+    "MEDIUM" -> "متوسط"
+    "HIGH" -> "مرتفع"
+    else -> "تلقائي"
+  }
+
+/**
+ * Gemini-style model picker: a compact dropdown anchored to the top bar,
+ * exactly like the Gemini app — model rows with a check on the selected one,
+ * then a "مستوى التفكير" row that expands in place. No full-screen dialog,
+ * no long explanations.
+ */
 @Composable
-private fun ChatModelSettingsDialog(
+private fun GeminiModelMenu(
+  expanded: Boolean,
   currentModelId: String?,
   currentThinkingLevel: String?,
+  onDismiss: () -> Unit,
   onModelSelected: (String?) -> Unit,
   onThinkingLevelSelected: (String?) -> Unit,
-  onDismiss: () -> Unit,
+  thinkingExpanded: Boolean,
+  onToggleThinking: () -> Unit,
 ) {
   val modelOptions =
     listOf(
-      Triple(null, "تلقائي", "يختار التطبيق أفضل نموذج متاح تلقائيًا"),
-      Triple("gemini-3.8-flash", "Flash 3.8", "الأحدث — متوازن وسريع للاستخدام اليومي"),
+      Triple(null, "تلقائي", "يختار الأفضل المتاح تلقائيًا"),
+      Triple("gemini-3.8-flash", "Flash 3.8", "الأحدث والأسرع للاستخدام اليومي"),
       Triple("gemini-3.5-flash", "Flash 3.5", "سريع وموثوق"),
-      Triple("gemini-flash-latest", "Flash الأحدث", "يتبع آخر إصدار Flash تلقائيًا"),
-      Triple("gemini-3.1-flash-lite-preview", "Flash-Lite 3.1", "الأسرع والأخف على الحصة"),
-      Triple("gemini-3.1-pro-preview", "Pro 3.1", "أعمق تحليلًا، لكنه أبطأ وحدوده أقل"),
+      Triple("gemini-flash-latest", "Flash الأحدث", "يتبع آخر إصدار Flash"),
+      Triple("gemini-3.1-flash-lite-preview", "Flash-Lite 3.1", "الأخف على الحصة"),
+      Triple("gemini-3.1-pro-preview", "Pro 3.1", "أعمق تحليلًا، لكنه أبطأ"),
     )
   val thinkingOptions =
     listOf(
       Triple(null, "تلقائي", "إعداد النموذج الافتراضي"),
       Triple("LOW", "منخفض", "سرعة وفعالية"),
       Triple("MEDIUM", "متوسط", "عمق معتدل"),
-      Triple("HIGH", "مرتفع", "دقة عالية، أبطأ وأكثر استهلاكًا"),
+      Triple("HIGH", "مرتفع", "دقة عالية، أبطأ"),
     )
 
-  Dialog(onDismissRequest = onDismiss) {
-    Card(
-      shape = MaterialTheme.shapes.extraLarge,
-      modifier = Modifier.fillMaxWidth().fillMaxHeight(0.85f),
-    ) {
-      LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-      ) {
-        item {
-          Row(verticalAlignment = Alignment.CenterVertically) {
+  DropdownMenu(expanded = expanded, onDismissRequest = onDismiss) {
+    modelOptions.forEach { (modelId, label, description) ->
+      DropdownMenuItem(
+        text = {
+          Column {
+            Text(text = label, style = MaterialTheme.typography.bodyLarge)
             Text(
-              text = "النموذج ومستوى التفكير",
-              style = MaterialTheme.typography.titleLarge,
-              fontWeight = FontWeight.Bold,
-              modifier = Modifier.weight(1f),
+              text = description,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            IconButton(onClick = onDismiss) {
-              Icon(imageVector = Icons.Default.Close, contentDescription = "إغلاق")
-            }
           }
-          Spacer(modifier = Modifier.height(4.dp))
-          Text(
-            text = "ينطبق الاختيار على هذه المحادثة فقط، وعلى الرسائل القادمة، وليس على المسح.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-          Spacer(modifier = Modifier.height(12.dp))
-          Text(
-            text = "النموذج",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-          )
-        }
-        items(modelOptions) { (modelId, label, description) ->
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().clickable { onModelSelected(modelId) },
-          ) {
-            RadioButton(
-              selected = currentModelId == modelId,
-              onClick = { onModelSelected(modelId) },
-            )
-            Column(modifier = Modifier.weight(1f)) {
-              Text(text = label, style = MaterialTheme.typography.bodyLarge)
-              Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
-            }
+        },
+        leadingIcon = {
+          if (currentModelId == modelId) {
+            Icon(imageVector = Icons.Default.Check, contentDescription = null)
           }
-        }
-        item {
-          Spacer(modifier = Modifier.height(12.dp))
+        },
+        onClick = { onModelSelected(modelId) },
+      )
+    }
+    HorizontalDivider()
+    DropdownMenuItem(
+      text = {
+        Row(verticalAlignment = Alignment.CenterVertically) {
           Text(
             text = "مستوى التفكير",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
+            modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.bodyLarge,
+          )
+          Text(
+            text = thinkingLabel(currentThinkingLevel),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.primary,
           )
         }
-        items(thinkingOptions) { (level, label, description) ->
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().clickable { onThinkingLevelSelected(level) },
-          ) {
-            RadioButton(
-              selected = currentThinkingLevel == level,
-              onClick = { onThinkingLevelSelected(level) },
-            )
-            Column(modifier = Modifier.weight(1f)) {
-              Text(text = label, style = MaterialTheme.typography.bodyLarge)
-              Text(
-                text = description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-              )
+      },
+      trailingIcon = {
+        Icon(
+          imageVector =
+            if (thinkingExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+          contentDescription = null,
+        )
+      },
+      onClick = onToggleThinking,
+    )
+    if (thinkingExpanded) {
+      thinkingOptions.forEach { (level, label, description) ->
+        DropdownMenuItem(
+          text = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              Spacer(modifier = Modifier.width(16.dp))
+              Column {
+                Text(text = label, style = MaterialTheme.typography.bodyLarge)
+                Text(
+                  text = description,
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
             }
-          }
-        }
-        item {
-          Spacer(modifier = Modifier.height(12.dp))
-          Text(
-            text = "مستوى التفكير يغيّر عدد رموز التفكير، فيؤثر على سرعة الرد واستهلاك الحصة، لا على سعر الرمز نفسه. إذا رفض نموذجٌ مستوى معينًا، سيظهر خطأ — أعد الضبط إلى تلقائي.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-          Spacer(modifier = Modifier.height(8.dp))
-          Text(
-            text = "الموديلات المقفلة في تطبيق Gemini (مثل 4 Argon) هي باقات اشتراك داخل التطبيق، وليست نماذج متاحة عبر مفتاح API، لذلك لا تظهر هنا.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-          Spacer(modifier = Modifier.height(12.dp))
-          Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
-            Text(text = "تم")
-          }
-        }
+          },
+          leadingIcon = {
+            if (currentThinkingLevel == level) {
+              Icon(imageVector = Icons.Default.Check, contentDescription = null)
+            }
+          },
+          onClick = { onThinkingLevelSelected(level) },
+        )
       }
     }
   }
 }
 
-
+/**
+ * Gemini-style side drawer: "محادثة جديدة" and "دردشة مؤقتة" at the top,
+ * then the saved conversations, then backup (export/import) at the bottom.
+ * Per-conversation actions live in a 3-dot menu on each row, as in other
+ * AI apps, instead of a row full of icons.
+ */
 @Composable
-private fun ChatHistoryDialog(
+private fun AssistantHistoryDrawer(
   conversations: List<ChatConversation>,
   activeConversationId: String?,
-  onDismiss: () -> Unit,
+  isTemporaryChat: Boolean,
   onSelect: (String) -> Unit,
   onCreate: () -> Unit,
+  onTemporary: () -> Unit,
   onRename: (String, String) -> Unit,
   onTogglePin: (String) -> Unit,
   onDelete: (String) -> Unit,
   onExportAll: () -> Unit,
   onImport: () -> Unit,
+  onClose: () -> Unit,
 ) {
   var renameTarget by remember { mutableStateOf<ChatConversation?>(null) }
   var renameText by remember { mutableStateOf("") }
   var deleteTarget by remember { mutableStateOf<ChatConversation?>(null) }
+  var overflowId by remember { mutableStateOf<String?>(null) }
 
-  Dialog(onDismissRequest = onDismiss) {
-    Card(
-      shape = MaterialTheme.shapes.extraLarge,
-      modifier = Modifier.fillMaxWidth().fillMaxHeight(0.85f),
-    ) {
-      Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-          Text(
-            text = stringResource(R.string.chat_history_title),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.weight(1f),
-          )
-          IconButton(onClick = onDismiss) {
-            Icon(imageVector = Icons.Default.Close, contentDescription = "إغلاق")
-          }
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-          Button(onClick = onCreate, modifier = Modifier.weight(1f)) {
-            Icon(imageVector = Icons.Default.Add, contentDescription = null)
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(text = stringResource(R.string.chat_history_new))
-          }
-          OutlinedButton(onClick = onExportAll) {
-            Text(text = stringResource(R.string.chat_history_export))
-          }
-          OutlinedButton(onClick = onImport) {
-            Text(text = stringResource(R.string.chat_history_import))
-          }
-        }
-        Spacer(modifier = Modifier.height(12.dp))
-        if (conversations.isEmpty()) {
-          Text(
-            text = stringResource(R.string.chat_history_empty),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-          )
-        } else {
-          LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            items(conversations, key = { it.id }) { conversation ->
-              val isActive = conversation.id == activeConversationId
-              val preview =
-                conversation.messages.lastOrNull { it.isUser }?.text?.take(60)
-                  ?: stringResource(R.string.chat_history_new)
-              Card(
-                colors =
-                  if (isActive) {
-                    CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-                  } else {
-                    CardDefaults.cardColors()
-                  },
-                onClick = { onSelect(conversation.id) },
-                modifier = Modifier.fillMaxWidth().testTag("chat_history_item_${conversation.id}"),
-              ) {
-                Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+  Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+      Text(
+        text = stringResource(R.string.assistant_title),
+        style = MaterialTheme.typography.titleLarge,
+        fontWeight = FontWeight.Bold,
+        modifier = Modifier.weight(1f),
+      )
+      IconButton(onClick = onClose) {
+        Icon(imageVector = Icons.Default.Close, contentDescription = "إغلاق")
+      }
+    }
+    Spacer(modifier = Modifier.height(12.dp))
+    Button(onClick = onCreate, modifier = Modifier.fillMaxWidth()) {
+      Icon(imageVector = Icons.Default.Add, contentDescription = null)
+      Spacer(modifier = Modifier.width(6.dp))
+      Text(text = stringResource(R.string.chat_history_new))
+    }
+    Spacer(modifier = Modifier.height(8.dp))
+    NavigationDrawerItem(
+      label = { Text(text = "دردشة مؤقتة") },
+      selected = isTemporaryChat,
+      onClick = onTemporary,
+      icon = { Icon(imageVector = Icons.Default.Bolt, contentDescription = null) },
+      badge = {
+        Text(
+          text = "لا تُحفظ",
+          style = MaterialTheme.typography.labelSmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      },
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+    HorizontalDivider()
+    Spacer(modifier = Modifier.height(8.dp))
+    Text(
+      text = "المحادثات",
+      style = MaterialTheme.typography.titleSmall,
+      fontWeight = FontWeight.Bold,
+    )
+    Spacer(modifier = Modifier.height(8.dp))
+    if (conversations.isEmpty()) {
+      Text(
+        text = stringResource(R.string.chat_history_empty),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+    } else {
+      LazyColumn(
+        modifier = Modifier.weight(1f),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+      ) {
+        items(conversations, key = { it.id }) { conversation ->
+          Box {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+              NavigationDrawerItem(
+                label = {
                   Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                      text = conversation.title,
+                      maxLines = 1,
+                      overflow = TextOverflow.Ellipsis,
+                      modifier = Modifier.weight(1f),
+                    )
                     if (conversation.pinned) {
                       Icon(
                         imageVector = Icons.Default.PushPin,
                         contentDescription = "مثبتة",
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(16.dp),
                       )
-                      Spacer(modifier = Modifier.width(4.dp))
-                    }
-                    Text(
-                      text = conversation.title,
-                      style = MaterialTheme.typography.titleSmall,
-                      fontWeight = FontWeight.Bold,
-                      modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                      text = formatRelativeTime(conversation.updatedAtMillis),
-                      style = MaterialTheme.typography.labelSmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                  }
-                  Spacer(modifier = Modifier.height(4.dp))
-                  Text(
-                    text = preview,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                  )
-                  Spacer(modifier = Modifier.height(8.dp))
-                  Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    IconButton(onClick = { onTogglePin(conversation.id) }) {
-                      Icon(
-                        imageVector = Icons.Default.PushPin,
-                        contentDescription = if (conversation.pinned) "إلغاء التثبيت" else "تثبيت",
-                        tint =
-                          if (conversation.pinned) {
-                            MaterialTheme.colorScheme.primary
-                          } else {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                          },
-                        modifier = Modifier.size(20.dp),
-                      )
-                    }
-                    IconButton(
-                      onClick = {
-                        renameTarget = conversation
-                        renameText = conversation.title
-                      },
-                    ) {
-                      Icon(
-                        imageVector = Icons.Default.Edit,
-                        contentDescription = "إعادة تسمية",
-                        modifier = Modifier.size(20.dp),
-                      )
-                    }
-                    IconButton(onClick = { deleteTarget = conversation }) {
-                      Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "حذف",
-                        modifier = Modifier.size(20.dp),
-                      )
                     }
                   }
-                }
+                },
+                selected = conversation.id == activeConversationId,
+                onClick = { onSelect(conversation.id) },
+                modifier = Modifier.weight(1f),
+              )
+              IconButton(onClick = { overflowId = conversation.id }) {
+                Icon(
+                  imageVector = Icons.Default.MoreVert,
+                  contentDescription = "خيارات المحادثة",
+                )
               }
+            }
+            DropdownMenu(
+              expanded = overflowId == conversation.id,
+              onDismissRequest = { overflowId = null },
+            ) {
+              DropdownMenuItem(
+                text = {
+                  Text(
+                    text =
+                      if (conversation.pinned) "إلغاء التثبيت" else "تثبيت",
+                  )
+                },
+                leadingIcon = {
+                  Icon(imageVector = Icons.Default.PushPin, contentDescription = null)
+                },
+                onClick = {
+                  onTogglePin(conversation.id)
+                  overflowId = null
+                },
+              )
+              DropdownMenuItem(
+                text = { Text(text = "إعادة تسمية") },
+                leadingIcon = {
+                  Icon(imageVector = Icons.Default.Edit, contentDescription = null)
+                },
+                onClick = {
+                  renameTarget = conversation
+                  renameText = conversation.title
+                  overflowId = null
+                },
+              )
+              DropdownMenuItem(
+                text = { Text(text = "حذف") },
+                leadingIcon = {
+                  Icon(imageVector = Icons.Default.Delete, contentDescription = null)
+                },
+                onClick = {
+                  deleteTarget = conversation
+                  overflowId = null
+                },
+              )
             }
           }
         }
       }
     }
+    Spacer(modifier = Modifier.height(8.dp))
+    HorizontalDivider()
+    Spacer(modifier = Modifier.height(8.dp))
+    NavigationDrawerItem(
+      label = { Text(text = stringResource(R.string.chat_history_export)) },
+      selected = false,
+      onClick = onExportAll,
+      icon = { Icon(imageVector = Icons.Default.Download, contentDescription = null) },
+    )
+    NavigationDrawerItem(
+      label = { Text(text = stringResource(R.string.chat_history_import)) },
+      selected = false,
+      onClick = onImport,
+      icon = { Icon(imageVector = Icons.Default.Upload, contentDescription = null) },
+    )
   }
 
   val renameConversation = renameTarget

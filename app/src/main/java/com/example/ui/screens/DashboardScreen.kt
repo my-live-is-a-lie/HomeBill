@@ -304,7 +304,7 @@ fun DashboardScreen(
                 Text(
                   text = stringResource(R.string.dashboard_greeting),
                   style = MaterialTheme.typography.labelLarge,
-                  color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f),
+                  color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.9f),
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Row(
@@ -316,18 +316,18 @@ fun DashboardScreen(
                     Text(
                       text = stringResource(R.string.dashboard_total_current_month),
                       style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f),
+                      color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.85f),
                     )
                     Text(
                       text =
                         "${DateAndFormatUtils.formatMoney(analyticsSummary.currentMonthTotal)} ${analyticsSummary.primaryCurrency}",
                       style = MaterialTheme.typography.displaySmall,
-                      color = MaterialTheme.colorScheme.onPrimary,
+                      color = androidx.compose.ui.graphics.Color.White,
                     )
                   }
                   val catCount = (categoriesState as? UiState.Success)?.data?.size ?: 0
                   Surface(
-                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.16f),
+                    color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.22f),
                     shape = MaterialTheme.shapes.medium,
                   ) {
                     Text(
@@ -372,8 +372,8 @@ fun DashboardScreen(
                   onClick = onOpenAssistant,
                   colors =
                     ButtonDefaults.outlinedButtonColors(
-                      containerColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.14f),
-                      contentColor = MaterialTheme.colorScheme.onPrimary,
+                      containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.18f),
+                      contentColor = androidx.compose.ui.graphics.Color.White,
                     ),
                   border = null,
                   shape = MaterialTheme.shapes.large,

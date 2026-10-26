@@ -163,6 +163,11 @@ fun AuthenticatedAppShell(currentUserId: String) {
   val chatVm: BillChatViewModel = viewModel(key = "chat_$currentUserId")
   val chatMessages by chatVm.messages.collectAsStateWithLifecycle()
   val isChatTyping by chatVm.isTyping.collectAsStateWithLifecycle()
+  val chatConversations by chatVm.conversations.collectAsStateWithLifecycle()
+  val activeChatConversation by chatVm.activeConversation.collectAsStateWithLifecycle()
+  LaunchedEffect(currentUserId) {
+    chatVm.loadHistory(context, currentUserId)
+  }
 
   val snackbarHostState = remember { SnackbarHostState() }
   LaunchedEffect(snackbarMessage) {
@@ -481,7 +486,18 @@ fun AuthenticatedAppShell(currentUserId: String) {
                     analyticsSummary = analyticsSummary,
                   )
                 },
-                onClearChat = { chatVm.clearConversation() },
+                onTemporaryChat = { chatVm.enterTemporaryChat() },
+                conversations = chatConversations,
+                activeConversation = activeChatConversation,
+                onSelectConversation = { chatVm.selectConversation(it) },
+                onCreateConversation = { chatVm.createConversation() },
+                onRenameConversation = { id, title -> chatVm.renameConversation(id, title) },
+                onTogglePin = { chatVm.togglePin(it) },
+                onDeleteConversation = { chatVm.deleteConversation(it) },
+                onExportAllConversations = { chatVm.exportAllConversations() },
+                onImportConversations = { json -> chatVm.importConversations(json) },
+                onSetConversationModel = { id, modelId -> chatVm.setConversationModel(id, modelId) },
+                onSetConversationThinkingLevel = { id, level -> chatVm.setConversationThinkingLevel(id, level) },
                 onOpenSettings = {
                   navController.navigate(SettingsRoute) {
                     popUpTo(DashboardRoute) { inclusive = false }
@@ -513,6 +529,9 @@ fun AuthenticatedAppShell(currentUserId: String) {
                   }
                 },
                 onResetScan = { vm.resetScanState() },
+                onCreateCategory = { name, uType, unit, threshold ->
+                  vm.createCategory(name, uType, unit, threshold)
+                },
               )
             }
 

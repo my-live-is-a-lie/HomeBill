@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 
 data class BillChatMessage(
   val id: String = UUID.randomUUID().toString(),
+  val timestampMillis: Long = System.currentTimeMillis(),
   val isUser: Boolean,
   val text: String,
   val highlights: List<ChatStatHighlight> = emptyList(),

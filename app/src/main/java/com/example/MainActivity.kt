@@ -477,6 +477,12 @@ fun AuthenticatedAppShell(currentUserId: String) {
                   )
                 },
                 onClearChat = { chatVm.clearConversation() },
+                onOpenSettings = {
+                  navController.navigate(SettingsRoute) {
+                    popUpTo(DashboardRoute) { inclusive = false }
+                    launchSingleTop = true
+                  }
+                },
               )
             }
 

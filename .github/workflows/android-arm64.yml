@@ -1,0 +1,185 @@
+name: Fast Android Build (arm64-v8a)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+  pull_request:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'نوع البناء (debug أو release)'
+        required: false
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+
+# إلغاء عمليات البناء القديمة تلقائياً عند دفع تعديلات جديدة لنفس الفرع لتوفير الوقت
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  TARGET_ABI: arm64-v8a
+  BUILD_TYPE: ${{ inputs.build_type || 'debug' }}
+
+jobs:
+  build-arm64:
+    name: Build APK (arm64-v8a only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Shallow checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Accept Android SDK licenses
+        run: |
+          mkdir -p "$ANDROID_HOME/licenses"
+          cat << 'EOF' > "$ANDROID_HOME/licenses/android-sdk-license"
+          8933bad161af4178b1185d1a37fbf41ea5269c55
+          d56f5187479451eabf01fb78af6dfcb131a6481e
+          24333f8a63b6825ea9c5514f83c2829b004d1fee
+          859f317696f67ef3d7f30a50a5560e7834b43903
+          EOF
+          cat << 'EOF' > "$ANDROID_HOME/licenses/android-sdk-preview-license"
+          84831b9409646a918e30573bab4c9c91346d8abd
+          504667f4c0de7af1a06de9f4b1727b84351f2910
+          EOF
+
+      - name: Cache Android SDK Platform 36.1
+        uses: actions/cache@v4
+        with:
+          path: |
+            /usr/local/lib/android/sdk/platforms/android-36*
+            /usr/local/lib/android/sdk/build-tools/36*
+          key: android-sdk-36.1-v1
+
+      - name: Set up Gradle 9.3.1 with Build & Configuration Cache
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+          cache-read-only: false
+
+      - name: Prepare environment & signing keys
+        env:
+          GEMINI_API_KEY_SECRET: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_SERVICES_JSON_SECRET: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          # تجهيز ملف .env المطلوب لإضافة Secrets Gradle Plugin
+          if [ ! -f .env ]; then
+            cp .env.example .env
+          fi
+          if [ -n "$GEMINI_API_KEY_SECRET" ]; then
+            printf 'GEMINI_API_KEY=%s\n' "$GEMINI_API_KEY_SECRET" > .env
+          fi
+
+          # دعم تمرير google-services.json اختيارياً عبر GitHub Secrets
+          if [ -n "$GOOGLE_SERVICES_JSON_SECRET" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON_SECRET" > app/google-services.json
+          fi
+
+          # تجهيز مفتاح التوقيع التجريبي debug.keystore من النسخة المشفرة أو توليده تلقائياً
+          if [ ! -f debug.keystore ]; then
+            if [ -f debug.keystore.base64 ]; then
+              tr -d '[:space:]' < debug.keystore.base64 | base64 -d > debug.keystore
+            else
+              keytool -genkeypair -v \
+                -keystore debug.keystore \
+                -storepass android \
+                -alias androiddebugkey \
+                -keypass android \
+                -keyalg RSA \
+                -keysize 2048 \
+                -validity 10000 \
+                -dname "CN=Android Debug,O=Android,C=US"
+            fi
+          fi
+
+          # تجهيز مفتاح التوقيع الرسمي عند اختيار release
+          if [ "$BUILD_TYPE" = "release" ]; then
+            if [ -n "$RELEASE_KEYSTORE_BASE64" ]; then
+              tr -d '[:space:]' <<<"$RELEASE_KEYSTORE_BASE64" | base64 -d > my-upload-key.jks
+            elif [ ! -f my-upload-key.jks ]; then
+              echo "::error::Release build requires RELEASE_KEYSTORE_BASE64, STORE_PASSWORD, and KEY_PASSWORD secrets."
+              exit 1
+            fi
+          fi
+
+      - name: Fast Build APK (arm64-v8a only)
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ "$BUILD_TYPE" = "release" ]; then
+            GRADLE_TASK=":app:assembleRelease"
+          else
+            GRADLE_TASK=":app:assembleDebug"
+          fi
+
+          gradle "$GRADLE_TASK" \
+            -PtargetAbi="$TARGET_ABI" \
+            --build-cache \
+            --configuration-cache \
+            --parallel \
+            --max-workers=4 \
+            -Dorg.gradle.jvmargs="-Xmx6g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" \
+            -Dkotlin.compiler.execution.strategy=in-process
+
+      - name: Verify arm64-v8a architecture & summarize
+        run: |
+          APK_PATH=$(find "app/build/outputs/apk/$BUILD_TYPE" -maxdepth 1 -name "*.apk" | head -n 1)
+          if [ -z "$APK_PATH" ] || [ ! -f "$APK_PATH" ]; then
+            echo "::error::APK file was not found in app/build/outputs/apk/$BUILD_TYPE"
+            exit 1
+          fi
+
+          # التحقق من عدم تضمين أي مكتبات أصلية لمعماريات أخرى غير arm64-v8a
+          OTHER_ABIS=$(unzip -Z1 "$APK_PATH" | grep '^lib/' | grep -v '^lib/arm64-v8a/' || true)
+          if [ -n "$OTHER_ABIS" ]; then
+            echo "::error::Unexpected non-arm64-v8a native libraries found in APK:"
+            echo "$OTHER_ABIS"
+            exit 1
+          fi
+
+          APK_SIZE=$(du -h "$APK_PATH" | cut -f1)
+          {
+            echo "### ملخص البناء السريع (arm64-v8a)"
+            echo "- **المعمارية:** \`arm64-v8a\` فقط"
+            echo "- **نوع البناء:** \`$BUILD_TYPE\`"
+            echo "- **مسار الملف:** \`$APK_PATH\`"
+            echo "- **حجم الحزمة:** \`$APK_SIZE\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload arm64-v8a APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fawateeri-arm64-v8a-${{ env.BUILD_TYPE }}
+          path: app/build/outputs/apk/${{ env.BUILD_TYPE }}/*.apk
+          compression-level: 0
+          retention-days: 14
+          if-no-files-found: error

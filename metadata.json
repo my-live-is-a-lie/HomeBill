@@ -1,0 +1,6 @@
+{
+  "name": "فواتيري",
+  "description": "تطبيق لإدارة الفواتير المنزلية الشهرية، مسح الفواتير بالكاميرا واستخراج بياناتها تلقائياً في جداول تفصيلية، ومقارنة الاستهلاك والتكاليف مع إحصائيات شهرية.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,235 @@
+<resources>
+    <string name="app_name">فواتيري</string>
+
+    <!-- Auth Screen -->
+    <string name="auth_headline">إدارة ذكية لفواتير منزلك الشهرية</string>
+    <string name="auth_subtitle">أضف فواتير الغاز والكهرباء والماء، صوّر الفاتورة لاستخراج بياناتها في جدول تفصيلي، وتلقَّ تنبيهات فورية عند ارتفاع الاستهلاك أو التكلفة.</string>
+    <string name="sign_in_with_google">تسجيل الدخول باستخدام Google</string>
+    <string name="sign_out">تسجيل الخروج</string>
+    <string name="auth_feature_scan">مسح ضوئي ذكي واستخراج جدول التفاصيل</string>
+    <string name="auth_feature_alert">تنبيهات فورية عند التفاوت مع الفاتورة السابقة</string>
+    <string name="auth_feature_charts">إحصائيات ورسوم بيانية شهرية للتكاليف</string>
+    <string name="security_prototype_notice">تنبيه أمان النسخة التجريبية: يتضمن التطبيق مفتاح واجهة الذكاء الاصطناعي لأغراض العرض؛ تجنّب مشاركة ملف APK علناً.</string>
+
+    <!-- Navigation -->
+    <string name="nav_home">الفواتير</string>
+    <string name="nav_scan">مسح فاتورة</string>
+    <string name="nav_analytics">الإحصائيات</string>
+    <string name="nav_assistant">المساعد</string>
+
+    <!-- Utility Types -->
+    <string name="utility_gas">الغاز</string>
+    <string name="utility_electricity">الكهرباء</string>
+    <string name="utility_water">الماء</string>
+    <string name="utility_internet">الإنترنت</string>
+    <string name="utility_telecom">الاتصالات</string>
+    <string name="utility_shopping">تسوق ومقاضي</string>
+    <string name="utility_dining">مطاعم وأغذية</string>
+    <string name="utility_maintenance">صيانة وخدمات</string>
+    <string name="utility_fuel">وقود ومواصلات</string>
+    <string name="utility_other">أخرى</string>
+
+    <!-- Quick Suggested Category Names -->
+    <string name="quick_cat_gas">فاتورة الغاز</string>
+    <string name="quick_cat_electricity">فاتورة الكهرباء</string>
+    <string name="quick_cat_water">فاتورة الماء</string>
+    <string name="quick_cat_internet">فاتورة الإنترنت</string>
+
+    <!-- Dashboard -->
+    <string name="dashboard_greeting">ملخص الفواتير المنزلية</string>
+    <string name="dashboard_total_current_month">إجمالي الشهر الحالي</string>
+    <string name="dashboard_categories_count">فئات الفواتير</string>
+    <string name="dashboard_alerts_title">تنبيهات التفاوت في التكلفة والاستهلاك</string>
+    <string name="dashboard_categories_section">أقسام الفواتير المنزلية</string>
+    <string name="add_category_button">إضافة فاتورة جديدة</string>
+    <string name="scan_bill_cta">تصوير فاتورة واستخراج بياناتها</string>
+    <string name="empty_categories_title">ابدأ بإضافة أول فاتورة منزلية</string>
+    <string name="empty_categories_subtitle">أنشئ قسم فاتورة مثل «فاتورة الغاز» أو صوّر أي فاتورة ليقوم التطبيق بتصنيفها وإنشاء جدول تفاصيلها تلقائياً.</string>
+    <string name="quick_setup_label">إضافة سريعة بنقرة واحدة:</string>
+    <string name="bills_count_format">%1$d فاتورة شهرية</string>
+    <string name="latest_bill_format">آخر فاتورة: %1$s %2$s (%3$s)</string>
+    <string name="no_bills_yet">لا توجد فواتير مضافة بعد</string>
+
+    <!-- Category Dialog -->
+    <string name="dialog_new_category_title">إضافة قسم فاتورة منزلية</string>
+    <string name="dialog_edit_category_title">تعديل قسم الفاتورة</string>
+    <string name="field_category_name">اسم الفاتورة (مثل: فاتورة الغاز)</string>
+    <string name="field_utility_type">نوع الخدمة</string>
+    <string name="field_default_unit">وحدة القياس الافتراضية (م³، ك.و.س...)</string>
+    <string name="field_alert_threshold">نسبة التنبيه عند ارتفاع القيمة أو الاستهلاك (%)</string>
+    <string name="action_save">حفظ</string>
+    <string name="action_cancel">إلغاء</string>
+    <string name="action_delete">حذف</string>
+    <string name="action_close">إغلاق</string>
+    <string name="action_back">رجوع</string>
+
+    <!-- Category Detail Screen -->
+    <string name="add_monthly_bill">إضافة فاتورة شهرية</string>
+    <string name="scan_for_category">تصوير فاتورة</string>
+    <string name="export_category_sheet">تصدير كشف Sheet</string>
+    <string name="delete_category_confirm_title">حذف قسم الفاتورة؟</string>
+    <string name="delete_category_confirm_body">سيتم حذف هذا القسم وجميع الفواتير الشهرية المسجلة بداخله نهائياً.</string>
+    <string name="category_avg_monthly">المتوسط الشهري</string>
+    <string name="category_latest_consumption">آخر استهلاك</string>
+    <string name="category_threshold_badge">تنبيه عند +%1$d%%</string>
+    <string name="empty_category_bills_title">لا توجد فواتير شهرية في هذا القسم</string>
+    <string name="empty_category_bills_subtitle">أضف فاتورة يدوياً مع تحديد تاريخها أو التقط صورة للفاتورة لاستخراج جدول التفاصيل آلياً.</string>
+
+    <!-- Manual / Edit Bill Form -->
+    <string name="form_add_bill_title">إضافة فاتورة شهرية</string>
+    <string name="form_edit_bill_title">تعديل بيانات الفاتورة والـ Sheet</string>
+    <string name="field_bill_date">تاريخ الفاتورة</string>
+    <string name="pick_date_button">اختيار التاريخ</string>
+    <string name="field_total_amount">القيمة المالية الإجمالية</string>
+    <string name="field_currency">العملة</string>
+    <string name="field_consumption_value">كمية الاستهلاك</string>
+    <string name="field_consumption_unit">وحدة الاستهلاك</string>
+    <string name="field_prev_reading">القراءة السابقة للعداد</string>
+    <string name="field_curr_reading">القراءة الحالية للعداد</string>
+    <string name="field_invoice_number">رقم الفاتورة / الحساب</string>
+    <string name="field_provider_name">الجهة المصدرة</string>
+    <string name="field_notes">ملاحظات</string>
+    <string name="sheet_rows_section_title">جدول تفاصيل الفاتورة (Sheet)</string>
+    <string name="add_sheet_row">إضافة بند للجدول</string>
+    <string name="field_row_label">البند (مثل: رسوم الخدمة)</string>
+    <string name="field_row_value">القيمة</string>
+    <string name="field_row_unit">الوحدة</string>
+
+    <!-- Scanner & AI Extraction -->
+    <string name="scanner_title">مسح الفاتورة واستخراج الـ Sheet</string>
+    <string name="scanner_subtitle">التقط صورة واضحة للفاتورة أو اخترها من المعرض ليقوم الذكاء الاصطناعي بقراءة النص وتحديد الفئة والتاريخ والقيم وبناء جدول كامل بالتفاصيل.</string>
+    <string name="take_photo_camera">تصوير بالكاميرا</string>
+    <string name="pick_photo_gallery">اختيار صورة فاتورة</string>
+    <string name="camera_permission_denied">يلزم منح إذن الكاميرا لالتقاط صورة الفاتورة، أو يمكنك تفعيل الإذن من إعدادات التطبيق أو اختيار صورة من المعرض مباشرة.</string>
+    <string name="camera_permission_ready">صلاحية الكاميرا مفعّلة — جاهز لمسح الفاتورة</string>
+    <string name="camera_permission_rationale_title">مطلوب إذن الوصول إلى الكاميرا</string>
+    <string name="camera_permission_rationale_body">يحتاج التطبيق إلى صلاحية الكاميرا لتصوير الفاتورة المنزلية واستخراج النص والتاريخ والقيم تلقائياً في جدول تفاصيل (Sheet).</string>
+    <string name="camera_permission_grant_action">منح صلاحية الكاميرا</string>
+    <string name="camera_permission_open_settings">تفعيل الكاميرا من إعدادات التطبيق</string>
+    <string name="scanning_in_progress">جارٍ قراءة نص الفاتورة واستخراج جدول التفاصيل...</string>
+    <string name="scan_result_sheet_title">جدول تفاصيل الفاتورة المستخرج (Sheet)</string>
+    <string name="detected_category_label">التصنيف المكتشف تلقائياً:</string>
+    <string name="target_category_label">سيتم الحفظ في قسم:</string>
+    <string name="auto_create_category_badge">سيتم إنشاء القسم تلقائياً</string>
+    <string name="extracted_raw_text_label">النص الكامل المستخرج من الصورة</string>
+    <string name="confirm_save_scanned_bill">اعتماد الـ Sheet وإضافته لقائمة الفواتير</string>
+    <string name="rescan_button">مسح صورة أخرى</string>
+    <string name="retry_scan_button">إعادة محاولة الاستخراج</string>
+    <string name="field_store_name">اسم المتجر / الجهة المصدرة</string>
+    <string name="field_tax_amount">قيمة الضريبة</string>
+    <string name="structured_json_preview_toggle">عرض كائن JSON المهيكل المستخرج</string>
+    <string name="structured_json_hide_toggle">إخفاء كائن JSON المهيكل</string>
+    <string name="structured_json_copied">تم نسخ بيانات JSON المهيكلة</string>
+    <string name="expense_classification_section">تصنيف نوع المصروف (تلقائي عبر Gemini أو يدوي):</string>
+    <string name="reclassify_with_gemini">إعادة تصنيف المصروف من اسم المتجر والمحتوى</string>
+    <string name="reclassifying_in_progress">جارٍ تصنيف نوع المصروف عبر Gemini...</string>
+
+    <!-- Bill Sheet & Comparison -->
+    <string name="view_bill_sheet">عرض الـ Sheet</string>
+    <string name="compare_previous_bill">مقارنة بالسابقة</string>
+    <string name="export_single_sheet_csv">تصدير Sheet (CSV)</string>
+    <string name="bill_sheet_modal_title">ورقة تفاصيل الفاتورة (Sheet)</string>
+    <string name="sheet_col_item">البند / التفصيل</string>
+    <string name="sheet_col_value">القيمة المستخرجة</string>
+    <string name="sheet_col_unit">الوحدة</string>
+    <string name="comparison_title">مقارنة الفاتورة مع الشهر السابق</string>
+    <string name="current_bill_label">الفاتورة الحالية</string>
+    <string name="previous_bill_label">الفاتورة السابقة</string>
+    <string name="no_previous_bill_message">هذه أقدم فاتورة مسجلة في هذا القسم؛ ستظهر المقارنة تلقائياً عند وجود فاتورة سابقة لها.</string>
+    <string name="variance_spike_alert_title">تنبيه تفاوت مرتفع!</string>
+    <string name="variance_amount_up">ارتفعت القيمة المالية بنسبة +%1$.1f%% (+%2$.2f %3$s) مقارنة بالفاتورة السابقة.</string>
+    <string name="variance_consumption_up">ارتفع الاستهلاك بنسبة +%1$.1f%% (+%2$.1f %3$s) مقارنة بالفاتورة السابقة.</string>
+    <string name="variance_normal_status">ضمن النطاق الطبيعي مقارنة بالفاتورة السابقة</string>
+    <string name="metric_amount">القيمة المالية</string>
+    <string name="metric_consumption">كمية الاستهلاك</string>
+    <string name="metric_meter_delta">قراءة العداد</string>
+
+    <!-- Analytics Screen -->
+    <string name="analytics_screen_title">الإحصائيات البيانية الشهرية</string>
+    <string name="analytics_monthly_bars_title">تطور التكاليف الشهرية</string>
+    <string name="analytics_category_share_title">توزيع المصاريف حسب نوع الفاتورة</string>
+    <string name="analytics_trend_line_title">منحنى الاستهلاك والتكلفة حسب الفئة</string>
+    <string name="analytics_kpi_avg">متوسط الصرف الشهري</string>
+    <string name="analytics_kpi_mom">التغير عن الشهر السابق</string>
+    <string name="analytics_kpi_highest">الأعلى تكلفة</string>
+    <string name="analytics_kpi_alerts">تنبيهات التفاوت</string>
+    <string name="analytics_empty_message">أضف فواتير منزلية لعرض الرسوم البيانية الشهرية ومؤشرات مراقبة التكاليف.</string>
+    <string name="share_sheet_chooser_title">مشاركة ملف جدول الفاتورة (CSV)</string>
+
+    <!-- CameraX Bill Scanner -->
+    <string name="camerax_guide_hint">ضع الفاتورة داخل الإطار بوضوح لقراءة النص والأرقام بدقة</string>
+    <string name="camerax_close_desc">إغلاق الماسح الضوئي</string>
+    <string name="camerax_flash_desc">تبديل الإضاءة (الفلاش)</string>
+    <string name="camerax_shutter_desc">التقاط صورة الفاتورة</string>
+    <string name="camerax_system_camera_fallback">استخدام تطبيق الكاميرا الخارجي</string>
+    <string name="camerax_unavailable_error">تعذر تشغيل معاينة الكاميرا المباشرة على هذا الجهاز.</string>
+
+    <!-- Gemini Bill Assistant Chatbot -->
+    <string name="hero_ask_assistant_cta">محادثة المساعد الذكي وتحليل الفواتير</string>
+    <string name="assistant_title">المساعد الذكي للفواتير</string>
+    <string name="assistant_live_context_badge">متصل بـ %1$d فاتورة في %2$d أقسام</string>
+    <string name="assistant_empty_context_badge">مساعد فواتيري الذكي (Gemini)</string>
+    <string name="assistant_clear_chat">محادثة جديدة</string>
+    <string name="assistant_input_placeholder">اسأل عن فواتيرك، الإحصائيات، أو طريقة استخدام التطبيق...</string>
+    <string name="assistant_send_desc">إرسال السؤال</string>
+    <string name="assistant_copy_desc">نسخ الرد</string>
+    <string name="assistant_copied_toast">تم نسخ رد المساعد</string>
+    <string name="assistant_typing">جارٍ تحليل بيانات الفواتير وإعداد الإجابة...</string>
+    <string name="assistant_quick_stats">إحصائية شاملة لفواتيري</string>
+    <string name="assistant_quick_spikes">تحليل أسباب ارتفاع التكاليف</string>
+    <string name="assistant_quick_saving">نصائح لخفض الاستهلاك</string>
+    <string name="assistant_quick_help">كيف أستخدم التطبيق والـ Sheet؟</string>
+    <string name="assistant_retry_button">إعادة المحاولة</string>
+
+    <!-- Bill History Search -->
+    <string name="bill_search_section_title">البحث في سجل الفواتير</string>
+    <string name="bill_search_placeholder">ابحث باسم المتجر، التاريخ، أو فئة المصروف...</string>
+    <string name="bill_search_placeholder_store">ابحث باسم المتجر أو الجهة المصدرة...</string>
+    <string name="bill_search_placeholder_date">ابحث بالتاريخ (مثل: 2026-10 أو أكتوبر)...</string>
+    <string name="bill_search_placeholder_category">ابحث بفئة المصروف (مثل: الكهرباء، تسوق)...</string>
+    <string name="bill_search_clear_desc">مسح نص البحث</string>
+    <string name="bill_search_scope_all">الكل</string>
+    <string name="bill_search_scope_store">اسم المتجر</string>
+    <string name="bill_search_scope_date">التاريخ</string>
+    <string name="bill_search_scope_category">فئة المصروف</string>
+    <string name="bill_search_results_count">نتائج البحث في السجل (%1$d)</string>
+    <string name="bill_search_reset_action">مسح البحث</string>
+    <string name="bill_search_empty_title">لا توجد فواتير مطابقة لبحثك</string>
+    <string name="bill_search_empty_subtitle">جرّب البحث باسم متجر آخر، أو تاريخ مثل 2026-10، أو فئة مصروف مثل الكهرباء أو تسوق.</string>
+    <string name="bill_search_open_category">فتح القسم</string>
+    <string name="category_bills_search_placeholder">ابحث في فواتير القسم باسم المتجر أو التاريخ...</string>
+
+    <!-- Household Budget & Monthly Category Charts Dashboard -->
+    <string name="budget_dashboard_title">لوحة ميزانية المنزل والمصاريف</string>
+    <string name="budget_hero_label">متابعة ميزانية المنزل الشهرية</string>
+    <string name="budget_selected_month_spent">إجمالي مصاريف %1$s</string>
+    <string name="budget_target_label">سقف الميزانية: %1$s %2$s</string>
+    <string name="budget_unset_hint">حدد سقف ميزانية المنزل الشهرية لمقارنة إجمالي مصاريف الفئات ومتابعة المتبقي تلقائياً.</string>
+    <string name="budget_set_cta">تحديد ميزانية المنزل</string>
+    <string name="budget_edit_cta">تعديل الميزانية</string>
+    <string name="budget_status_within">ضمن الميزانية • المتبقي %1$s %2$s</string>
+    <string name="budget_status_approaching">اقتربت من الحد • المتبقي %1$s %2$s (%3$.0f%%)</string>
+    <string name="budget_status_over">تجاوزت الميزانية بمقدار %1$s %2$s (%3$.0f%%)</string>
+    <string name="budget_used_percent_badge">استُهلك %1$.0f%% من الميزانية</string>
+    <string name="budget_dialog_title">إعداد ميزانية المنزل الشهرية</string>
+    <string name="budget_dialog_subtitle">حدد السقف الشهري المستهدف لإجمالي مصاريف وفواتير المنزل لمتابعته على الرسوم البيانية.</string>
+    <string name="budget_field_monthly_limit">السقف الشهري للميزانية (%1$s)</string>
+    <string name="budget_field_warning_percent">نسبة التنبيه المبكر (%%)</string>
+    <string name="budget_quick_presets_label">قيم مقترحة سريعة:</string>
+    <string name="budget_prev_month_desc">الشهر السابق</string>
+    <string name="budget_next_month_desc">الشهر التالي</string>
+    <string name="chart_monthly_by_category_title">إجمالي المصاريف الشهرية لكل فئة</string>
+    <string name="chart_monthly_by_category_subtitle">مقارنة مصاريف الفئات شهرياً مع خط سقف ميزانية المنزل</string>
+    <string name="chart_filter_all_categories">كل الفئات</string>
+    <string name="chart_budget_reference_legend">سقف الميزانية (%1$s %2$s)</string>
+    <string name="chart_avg_reference_legend">المتوسط (%1$s %2$s)</string>
+    <string name="chart_selected_month_breakdown_title">تفصيل مصاريف الفئات — %1$s</string>
+    <string name="chart_mode_bars">أعمدة الفئات</string>
+    <string name="chart_mode_donut">توزيع دائري</string>
+    <string name="chart_bills_count_badge">%1$d فاتورة</string>
+    <string name="chart_share_of_month">%1$.1f%% من إجمالي الشهر</string>
+    <string name="chart_no_expenses_in_month">لا توجد مصاريف مسجلة في هذا الشهر بعد.</string>
+    <string name="home_budget_card_title">ميزانية المنزل والمصاريف الشهرية</string>
+    <string name="home_open_charts_dashboard_cta">عرض لوحة الرسوم البيانية والميزانية</string>
+    <string name="home_top_category_badge">الأعلى صرفاً: %1$s (%2$s %3$s)</string>
+</resources>

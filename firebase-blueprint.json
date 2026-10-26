@@ -1,0 +1,224 @@
+{
+  "entities": {
+    "BillCategory": {
+      "title": "BillCategory",
+      "description": "Represents a user-defined household utility bill folder such as Gas, Electricity, or Water.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the authenticated Google user owning this category."
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name of the bill category (e.g., فاتورة الغاز)."
+        },
+        "utilityType": {
+          "type": "string",
+          "enum": ["gas", "electricity", "water", "internet", "telecom", "shopping", "dining", "maintenance", "fuel", "other"],
+          "description": "Normalized utility or expense classification."
+        },
+        "defaultUnit": {
+          "type": "string",
+          "description": "Default measurement unit for consumption (e.g., م³, ك.و.س)."
+        },
+        "alertThresholdPercent": {
+          "type": "number",
+          "description": "Percentage spike threshold vs previous bill that triggers variance alerts."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp on creation (clients must submit FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp on last update (clients must submit FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "name",
+        "utilityType",
+        "defaultUnit",
+        "alertThresholdPercent",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "BillRecord": {
+      "title": "BillRecord",
+      "description": "Represents a single monthly utility bill entry with extracted OCR details and structured sheet rows.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the authenticated Google user owning this bill."
+        },
+        "categoryId": {
+          "type": "string",
+          "description": "Document ID of the parent BillCategory."
+        },
+        "categoryName": {
+          "type": "string",
+          "description": "Denormalized category name for analytics and export."
+        },
+        "utilityType": {
+          "type": "string",
+          "enum": ["gas", "electricity", "water", "internet", "telecom", "shopping", "dining", "maintenance", "fuel", "other"],
+          "description": "Utility or expense type classification."
+        },
+        "billDateIso": {
+          "type": "string",
+          "description": "ISO date of the bill (YYYY-MM-DD)."
+        },
+        "billingMonth": {
+          "type": "string",
+          "description": "Year-month bucket for monthly chart aggregation (YYYY-MM)."
+        },
+        "billDateEpochMillis": {
+          "type": "integer",
+          "description": "Epoch milliseconds of the bill date for chronological comparison."
+        },
+        "totalAmount": {
+          "type": "number",
+          "description": "Total financial amount due on the bill."
+        },
+        "currency": {
+          "type": "string",
+          "description": "Currency symbol or code."
+        },
+        "consumptionValue": {
+          "type": "number",
+          "description": "Numeric utility consumption quantity."
+        },
+        "consumptionUnit": {
+          "type": "string",
+          "description": "Unit of consumption (e.g., م³, ك.و.س)."
+        },
+        "previousReading": {
+          "type": "number",
+          "description": "Previous meter reading extracted or entered."
+        },
+        "currentReading": {
+          "type": "number",
+          "description": "Current meter reading extracted or entered."
+        },
+        "invoiceNumber": {
+          "type": "string",
+          "description": "Invoice or subscriber reference number."
+        },
+        "providerName": {
+          "type": "string",
+          "description": "Utility company or provider name."
+        },
+        "rawExtractedText": {
+          "type": "string",
+          "description": "Raw OCR text extracted from the bill image."
+        },
+        "notes": {
+          "type": "string",
+          "description": "User notes attached to this bill."
+        },
+        "sourceType": {
+          "type": "string",
+          "enum": ["manual", "camera_ai"],
+          "description": "How this bill was created (manual entry or camera AI extraction)."
+        },
+        "sheetItems": {
+          "type": "array",
+          "description": "Bounded list (<= 25) of structured detail row maps ({label, value, unit}) extracted from the bill."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp on creation (clients must submit FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp on update (clients must submit FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "categoryId",
+        "categoryName",
+        "utilityType",
+        "billDateIso",
+        "billingMonth",
+        "billDateEpochMillis",
+        "totalAmount",
+        "currency",
+        "consumptionValue",
+        "consumptionUnit",
+        "previousReading",
+        "currentReading",
+        "invoiceNumber",
+        "providerName",
+        "rawExtractedText",
+        "notes",
+        "sourceType",
+        "sheetItems",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "HouseholdBudget": {
+      "title": "HouseholdBudget",
+      "description": "Represents the user's monthly household budget configuration for tracking total expenses across bill categories.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the authenticated Google user owning this budget."
+        },
+        "monthlyLimit": {
+          "type": "number",
+          "description": "Target maximum monthly household expenditure."
+        },
+        "currency": {
+          "type": "string",
+          "description": "Currency symbol or code for the monthly budget."
+        },
+        "warningPercent": {
+          "type": "number",
+          "description": "Percentage of monthlyLimit (e.g., 80) at which an approaching-limit warning is shown."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp on creation (clients must submit FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp on last update (clients must submit FieldValue.serverTimestamp())."
+        }
+      },
+      "required": [
+        "userId",
+        "monthlyLimit",
+        "currency",
+        "warningPercent",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/categories/{categoryId}": {
+      "schema": "BillCategory",
+      "description": "User-owned household utility bill categories."
+    },
+    "/bills/{billId}": {
+      "schema": "BillRecord",
+      "description": "User-owned monthly utility bill entries and structured detail sheets."
+    },
+    "/budgets/{budgetId}": {
+      "schema": "HouseholdBudget",
+      "description": "User-owned monthly household budget configuration where budgetId equals userId."
+    }
+  }
+}

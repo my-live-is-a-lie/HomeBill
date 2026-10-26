@@ -8,7 +8,6 @@ import android.media.ExifInterface
 import android.net.Uri
 import android.util.Base64
 import android.util.Log
-import com.example.BuildConfig
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -150,7 +149,8 @@ data class ScannedBillJsonResult(
  */
 class GeminiApiClient(
   private val service: GeminiApiService = defaultService,
-  private val apiKeyProvider: () -> String = { BuildConfig.GEMINI_API_KEY },
+  // The user's own key, entered in Settings. No developer key fallback here.
+  private val apiKeyProvider: () -> String = { UserGeminiKeyStore.getKey() },
 ) {
 
   /**
@@ -276,7 +276,7 @@ class GeminiApiClient(
     val key = apiKeyProvider().trim()
     if (key.isBlank() || key == "MY_GEMINI_API_KEY") {
       throw IllegalStateException(
-        "يرجى إضافة مفتاح GEMINI_API_KEY في لوحة Secrets داخل AI Studio لتفعيل قراءة الفواتير بالذكاء الاصطناعي."
+        "لم يتم إضافة مفتاح Gemini الخاص بك بعد. أضفه من تبويب الإعدادات قبل استخدام قراءة الفواتير بالذكاء الاصطناعي."
       )
     }
     return key
@@ -311,7 +311,7 @@ class GeminiApiClient(
         Log.w(TAG, "Gemini vision model '$modelId' failed with HTTP $code", he)
         if (code == 401 || code == 403) {
           throw IllegalStateException(
-            "تعذر التحقق من صلاحية مفتاح GEMINI_API_KEY (HTTP $code). يرجى مراجعة لوحة Secrets."
+            "تعذر التحقق من صلاحية مفتاح Gemini الخاص بك (HTTP $code). تحقق من المفتاح في تبويب الإعدادات."
           )
         }
         lastError = he

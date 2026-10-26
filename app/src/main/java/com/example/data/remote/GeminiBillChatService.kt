@@ -1,7 +1,6 @@
 package com.example.data.remote
 
 import android.util.Log
-import com.example.BuildConfig
 import com.example.data.model.BillCategory
 import com.example.data.model.BillRecord
 import com.example.data.model.UtilityType
@@ -78,7 +77,10 @@ interface GeminiChatApiService {
   ): GeminiChatResponse
 }
 
-class GeminiBillChatService {
+class GeminiBillChatService(
+  // The user's own key, entered in Settings. No developer key fallback here.
+  private val apiKeyProvider: () -> String = { UserGeminiKeyStore.getKey() },
+) {
   private val json = GeminiApiClient.lenientJson
 
   private val api: GeminiChatApiService by lazy {
@@ -99,10 +101,10 @@ class GeminiBillChatService {
   ): Result<BillChatAiReplyDto> =
     withContext(Dispatchers.IO) {
       runCatching {
-        val apiKey = BuildConfig.GEMINI_API_KEY
+        val apiKey = apiKeyProvider().trim()
         if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
           throw IllegalStateException(
-            "يرجى إضافة مفتاح GEMINI_API_KEY في لوحة Secrets داخل AI Studio لتفعيل المساعد الذكي."
+            "لم يتم إضافة مفتاح Gemini الخاص بك بعد. أضفه من تبويب الإعدادات قبل استخدام المساعد الذكي."
           )
         }
 
@@ -158,7 +160,7 @@ class GeminiBillChatService {
             Log.w(TAG, "Gemini chat model '$modelId' failed with HTTP $code", he)
             if (code == 401 || code == 403) {
               throw IllegalStateException(
-                "تعذر التحقق من صلاحية مفتاح GEMINI_API_KEY (HTTP $code). يرجى مراجعة لوحة Secrets في AI Studio."
+                "تعذر التحقق من صلاحية مفتاح Gemini الخاص بك (HTTP $code). تحقق من المفتاح في تبويب الإعدادات."
               )
             }
             lastError = he
@@ -235,7 +237,7 @@ class GeminiBillChatService {
           )
         400 ->
           IllegalStateException(
-            "تعذر معالجة الطلب الحالي. تأكد من ضبط مفتاح GEMINI_API_KEY الصحيح في لوحة Secrets."
+            "تعذر معالجة الطلب الحالي. تأكد من ضبط مفتاح Gemini الخاص بك في تبويب الإعدادات."
           )
         else ->
           IllegalStateException(

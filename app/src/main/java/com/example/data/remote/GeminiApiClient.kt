@@ -64,6 +64,16 @@ data class GeminiGenerationConfig(
   val responseMimeType: String? = null,
   val responseSchema: JsonObject? = null,
   val temperature: Float? = null,
+  // REST enum values are uppercase: "LOW", "MEDIUM", "HIGH" (and "MINIMAL"
+  // on Flash / Flash-Lite models only — not offered in the UI, because Pro
+  // rejects it). Null = the model's own default. Only the chat service sets
+  // this; the scanner never does, so scan behaviour is unchanged.
+  val thinkingConfig: GeminiThinkingConfig? = null,
+)
+
+@Serializable
+data class GeminiThinkingConfig(
+  val thinkingLevel: String? = null,
 )
 
 @Serializable

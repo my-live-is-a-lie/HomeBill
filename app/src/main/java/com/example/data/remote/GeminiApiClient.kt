@@ -272,6 +272,50 @@ class GeminiApiClient(
     return ScannedBillJsonResult(data = normalizedDto, formattedJson = pretty)
   }
 
+  /**
+   * Tests a single key with a minimal one-word Gemini call, without
+   * changing the active key. Maps HTTP failures to plain Arabic
+   * explanations: wrong key, revoked/expired key, disabled key, quota.
+   */
+  suspend fun testApiKey(apiKey: String): Result<String> =
+    withContext(Dispatchers.IO) {
+      runCatching {
+        val key = apiKey.trim()
+        if (key.isBlank()) {
+          throw IllegalStateException("المفتاح فارغ — أدخل مفتاحًا أولًا.")
+        }
+        val request = GenerateContentRequest(
+          contents = listOf(
+            GeminiContent(parts = listOf(GeminiPart(text = "أجب بكلمة واحدة فقط: نجاح"))),
+          ),
+          generationConfig = GeminiGenerationConfig(temperature = 0f),
+        )
+        val response = service.generateContent(model = "gemini-flash-latest", apiKey = key, request = request)
+        val text = response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
+        if (text.isNullOrBlank()) {
+          throw IllegalStateException("وصل الرد من Gemini لكنه كان فارغًا — أعد الاختبار.")
+        }
+        "نجح الاختبار — المفتاح صالح ويعمل مع Gemini."
+      }.recoverCatching { error ->
+        when (error) {
+          is HttpException -> throw IllegalStateException(keyTestErrorMessage(error.code()))
+          is IOException -> throw IllegalStateException(
+            "تعذر الاتصال بـ Gemini — تحقق من اتصال الإنترنت ثم أعد الاختبار.",
+          )
+          else -> throw error
+        }
+      }
+    }
+
+  private fun keyTestErrorMessage(code: Int): String = when (code) {
+    400 -> "المفتاح غير صالح — تنسيقه غير مقبول من Google (HTTP 400). تحقق من نسخه كاملًا دون مسافات زائدة."
+    401 -> "المفتاح غير مصرح به — مفتاح خاطئ، أو انتهت صلاحيته، أو تم إلغاؤه (HTTP 401)."
+    403 -> "المفتاح غير مصرح به لهذا الاستخدام — قد يكون معطّلًا أو غير مفعّل لهذا المشروع أو النموذج (HTTP 403)."
+    404 -> "النموذج غير متاح لهذا المفتاح (HTTP 404)."
+    429 -> "تم تجاوز حصة المفتاح — انتظر قليلًا ثم أعد الاختبار (HTTP 429)."
+    else -> "فشل الاختبار (HTTP $code) — تحقق من المفتاح ثم أعد المحاولة."
+  }
+
   private fun requireValidApiKey(): String {
     val key = apiKeyProvider().trim()
     if (key.isBlank() || key == "MY_GEMINI_API_KEY") {

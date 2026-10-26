@@ -333,7 +333,7 @@ fun DashboardScreen(
                     Text(
                       text = "$catCount ${stringResource(R.string.dashboard_categories_count)}",
                       style = MaterialTheme.typography.labelLarge,
-                      color = MaterialTheme.colorScheme.onPrimary,
+                      color = androidx.compose.ui.graphics.Color.White,
                       modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                     )
                   }

@@ -33,7 +33,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -77,7 +76,6 @@ import com.example.ui.components.BillHistorySearchBarCard
 import com.example.ui.components.BillSearchEmptyStateCard
 import com.example.ui.components.BillSearchResultsHeader
 import com.example.ui.components.BillSheetModal
-import com.example.ui.components.CategoryFormDialog
 import com.example.ui.components.HomeBudgetOverviewCard
 import com.example.ui.components.HouseholdBudgetDialog
 import com.example.ui.components.SearchedBillRecordCard
@@ -110,7 +108,6 @@ fun DashboardScreen(
   onOpenAnalyticsDashboard: () -> Unit = {},
   onSaveHouseholdBudget: (Double, String, Double) -> Unit = { _, _, _ -> },
 ) {
-  var showCreateDialog by remember { mutableStateOf(false) }
   var showBudgetDialog by remember { mutableStateOf(false) }
   var activeComparison by remember { mutableStateOf<BillComparisonResult?>(null) }
   var activeSheetBill by remember { mutableStateOf<BillRecord?>(null) }
@@ -141,16 +138,6 @@ fun DashboardScreen(
       ?: remember(allBills, allCategories) {
         MonthlyBudgetDashboardEngine.compute(allBills, allCategories, null)
       }
-
-  if (showCreateDialog) {
-    CategoryFormDialog(
-      onDismiss = { showCreateDialog = false },
-      onSave = { name, uType, unit, threshold ->
-        showCreateDialog = false
-        onCreateCategory(name, uType, unit, threshold)
-      },
-    )
-  }
 
   if (showBudgetDialog) {
     HouseholdBudgetDialog(
@@ -247,16 +234,6 @@ fun DashboardScreen(
           TopAppBarDefaults.topAppBarColors(
             containerColor = MaterialTheme.colorScheme.background
           ),
-      )
-    },
-    floatingActionButton = {
-      ExtendedFloatingActionButton(
-        onClick = { showCreateDialog = true },
-        icon = { Icon(Icons.Default.Add, contentDescription = null) },
-        text = { Text(stringResource(R.string.add_category_button)) },
-        containerColor = MaterialTheme.colorScheme.primary,
-        contentColor = MaterialTheme.colorScheme.onPrimary,
-        modifier = Modifier.testTag("add_category_fab"),
       )
     },
     containerColor = MaterialTheme.colorScheme.background,

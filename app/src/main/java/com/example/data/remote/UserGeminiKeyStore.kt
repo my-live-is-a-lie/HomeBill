@@ -22,6 +22,7 @@ object UserGeminiKeyStore {
   private const val KEY_LEGACY_SINGLE = "gemini_api_key"
   private const val KEY_LIST = "gemini_keys"
   private const val KEY_ACTIVE_INDEX = "gemini_active_index"
+  private const val KEY_NAMES = "gemini_key_names"
 
   @Volatile
   private var appContext: Context? = null
@@ -48,6 +49,46 @@ object UserGeminiKeyStore {
   fun getKeys(context: Context): List<String> {
     init(context)
     return getKeys()
+  }
+
+  /** Custom names, aligned by index with getKeys(). Missing names default to "مفتاح N". */
+  fun getNames(): List<String> {
+    val keys = getKeys()
+    val stored = prefs()?.getString(KEY_NAMES, "").orEmpty()
+      .split("\n").map { it.trim().replace("\n", " ") }.filter { it.isNotBlank() }
+    return keys.indices.map { i -> stored.getOrNull(i) ?: "مفتاح ${i + 1}" }
+  }
+
+  fun getNames(context: Context): List<String> {
+    init(context)
+    return getNames()
+  }
+
+  private fun writeNames(names: List<String>, context: Context? = null) {
+    prefs(context)?.edit()?.putString(KEY_NAMES, names.joinToString("\n"))?.apply()
+  }
+
+  fun setKeyName(index: Int, name: String, context: Context? = null) {
+    val keys = getKeys()
+    if (index !in keys.indices) return
+    val names = getNames().toMutableList()
+    names[index] = name.trim().replace("\n", " ").ifBlank { "مفتاح ${index + 1}" }
+    writeNames(names, context)
+  }
+
+  /** Updates both the key value and its name. Returns false if blank or a duplicate of another key. */
+  fun updateKey(index: Int, newKey: String, newName: String, context: Context? = null): Boolean {
+    val keys = getKeys().toMutableList()
+    if (index !in keys.indices) return false
+    val trimmed = newKey.trim()
+    if (trimmed.isBlank()) return false
+    if (keys.indices.any { it != index && keys[it] == trimmed }) return false
+    keys[index] = trimmed
+    val names = getNames().toMutableList()
+    names[index] = newName.trim().replace("\n", " ").ifBlank { "مفتاح ${index + 1}" }
+    writeKeys(keys, activeIndex(), context)
+    writeNames(names, context)
+    return true
   }
 
   fun activeIndex(): Int {
@@ -95,7 +136,19 @@ object UserGeminiKeyStore {
     keys.add(trimmed)
     val active = if (keys.size == 1) 0 else activeIndex()
     writeKeys(keys, active, context)
+    val names = getNames().toMutableList()
+    while (names.size < keys.size) names.add("مفتاح ${names.size + 1}")
+    writeNames(names, context)
     return true
+  }
+
+  /** Adds a key with a custom name. Returns false if blank or already saved. */
+  fun addKey(key: String, name: String, context: Context? = null): Boolean {
+    val trimmed = key.trim()
+    if (trimmed.isBlank() || getKeys().contains(trimmed)) return false
+    val ok = addKey(trimmed, context)
+    if (ok) setKeyName(getKeys().indexOf(trimmed), name, context)
+    return ok
   }
 
   /** Legacy single-key save: adds the key and makes it the active one. */
@@ -117,6 +170,9 @@ object UserGeminiKeyStore {
     if (index !in keys.indices) return
     val wasActive = activeIndex()
     keys.removeAt(index)
+    val names = getNames().toMutableList()
+    if (index in names.indices) names.removeAt(index)
+    writeNames(names, context)
     val active = when {
       keys.isEmpty() -> 0
       index < wasActive -> wasActive - 1

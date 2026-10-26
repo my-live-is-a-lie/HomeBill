@@ -88,6 +88,7 @@ private fun SettingsHubScreen(
   onExportChats: () -> String,
   onImportChats: (String) -> ChatImportResult,
 ) {
+  val context = LocalContext.current
   var pendingExportJson by remember { mutableStateOf<String?>(null) }
   val exportLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -122,7 +123,6 @@ private fun SettingsHubScreen(
         }
       Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
     }
-  val context = LocalContext.current
   val keys = UserGeminiKeyStore.getKeys(context)
   val names = UserGeminiKeyStore.getNames(context)
   val active = UserGeminiKeyStore.activeIndex(context)

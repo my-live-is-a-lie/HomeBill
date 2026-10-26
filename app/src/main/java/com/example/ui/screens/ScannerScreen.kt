@@ -96,6 +96,7 @@ import com.example.data.model.UtilityType
 import com.example.data.remote.ScannedBillDraft
 import com.example.domain.BillAnalyticsEngine
 import com.example.ui.components.CameraXBillCaptureDialog
+import com.example.ui.components.CategoryFormDialog
 import com.example.ui.components.UtilityIconAvatar
 import com.example.ui.theme.LocalUtilityPalette
 import com.example.ui.viewmodel.ScanUiState
@@ -125,12 +126,14 @@ fun ScannerScreen(
   onReclassifyDraft: () -> Unit = {},
   onSaveScannedBill: (ScannedBillDraft, String?) -> Unit,
   onResetScan: () -> Unit,
+  onCreateCategory: (String, UtilityType, String, Double) -> Unit,
 ) {
   val context = LocalContext.current
   var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
   var permissionDeniedNotice by rememberSaveable { mutableStateOf(false) }
   var permissionRequestedOnce by rememberSaveable { mutableStateOf(false) }
   var showCameraXScanner by remember { mutableStateOf(false) }
+  var showCreateDialog by remember { mutableStateOf(false) }
 
   val cameraPermissionState =
     rememberPermissionState(permission = Manifest.permission.CAMERA) { isGranted ->
@@ -177,6 +180,16 @@ fun ScannerScreen(
         onImageSelected(uri)
       }
     }
+
+  if (showCreateDialog) {
+    CategoryFormDialog(
+      onDismiss = { showCreateDialog = false },
+      onSave = { name, uType, unit, threshold ->
+        showCreateDialog = false
+        onCreateCategory(name, uType, unit, threshold)
+      },
+    )
+  }
 
   if (showCameraXScanner) {
     CameraXBillCaptureDialog(
@@ -475,6 +488,24 @@ fun ScannerScreen(
                 onRescan = onResetScan,
               )
             }
+          }
+        }
+
+        // Separate "add bill" button below the scan card.
+        item {
+          Button(
+            onClick = { showCreateDialog = true },
+            modifier =
+              Modifier.fillMaxWidth()
+                .height(52.dp)
+                .testTag("add_bill_from_scanner_button"),
+          ) {
+            Icon(Icons.Default.Add, contentDescription = null)
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+              text = stringResource(R.string.add_category_button),
+              style = MaterialTheme.typography.titleMedium,
+            )
           }
         }
       }

@@ -233,4 +233,13 @@
     <string name="home_budget_card_title">ميزانية المنزل والمصاريف الشهرية</string>
     <string name="home_open_charts_dashboard_cta">عرض لوحة الرسوم البيانية والميزانية</string>
     <string name="home_top_category_badge">الأعلى صرفاً: %1$s (%2$s %3$s)</string>
+  <!-- Assistant chat history (local) -->
+  <string name="chat_history_title">سجل المحادثات</string>
+  <string name="chat_history_new">محادثة جديدة</string>
+  <string name="chat_history_export">تصدير</string>
+  <string name="chat_history_import">استيراد</string>
+  <string name="chat_history_rename">إعادة تسمية المحادثة</string>
+  <string name="chat_history_delete_title">حذف المحادثة؟</string>
+  <string name="chat_history_delete_body">سيتم حذف هذه المحادثة نهائيًا، ولا يمكن التراجع.</string>
+  <string name="chat_history_empty">لا توجد محادثات محفوظة بعد</string>
 </resources>

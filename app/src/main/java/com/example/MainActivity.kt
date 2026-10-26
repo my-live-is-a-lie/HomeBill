@@ -164,6 +164,7 @@ fun AuthenticatedAppShell(currentUserId: String) {
   val chatMessages by chatVm.messages.collectAsStateWithLifecycle()
   val isChatTyping by chatVm.isTyping.collectAsStateWithLifecycle()
   val chatConversations by chatVm.conversations.collectAsStateWithLifecycle()
+  val isTemporaryChat by chatVm.isTemporaryChat.collectAsStateWithLifecycle()
   val activeChatConversation by chatVm.activeConversation.collectAsStateWithLifecycle()
   LaunchedEffect(currentUserId) {
     chatVm.loadHistory(context, currentUserId)
@@ -488,6 +489,7 @@ fun AuthenticatedAppShell(currentUserId: String) {
                 },
                 onTemporaryChat = { chatVm.enterTemporaryChat() },
                 conversations = chatConversations,
+                isTemporaryChat = isTemporaryChat,
                 activeConversation = activeChatConversation,
                 onSelectConversation = { chatVm.selectConversation(it) },
                 onCreateConversation = { chatVm.createConversation() },

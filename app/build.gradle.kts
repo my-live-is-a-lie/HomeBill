@@ -144,6 +144,8 @@ dependencies {
   implementation(libs.androidx.credentials)
   implementation(libs.androidx.credentials.play.services)
   implementation(libs.googleid)
+  // ML Kit Document Scanner: automatic edge detection + crop of the bill before sending to Gemini
+  implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
   // implementation(libs.firebase.appcheck.recaptcha)
   // implementation(libs.firebase.appcheck.debug)
   implementation(libs.kotlinx.coroutines.android)

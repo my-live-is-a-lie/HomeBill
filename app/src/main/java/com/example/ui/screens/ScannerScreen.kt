@@ -1,14 +1,17 @@
 package com.example.ui.screens
 
 import android.Manifest
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -105,8 +108,19 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.google.accompanist.permissions.shouldShowRationale
+import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
 import java.io.File
 import java.util.Locale
+
+/** Walks up the [ContextWrapper] chain to find the hosting [Activity], or null if none. */
+private tailrec fun Context.findActivity(): Activity? =
+  when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+  }
 
 @OptIn(
   ExperimentalMaterial3Api::class,
@@ -180,6 +194,50 @@ fun ScannerScreen(
         onImageSelected(uri)
       }
     }
+
+  // ML Kit Document Scanner: detects the bill edges automatically, lets the user adjust the
+  // crop, and returns only the cropped bill image (so Gemini gets less irrelevant content).
+  val documentScannerLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+      if (result.resultCode == Activity.RESULT_OK) {
+        val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+        val croppedUri = scanResult?.pages?.firstOrNull()?.imageUri
+        if (croppedUri != null) {
+          onImageSelected(croppedUri)
+        }
+      }
+    }
+
+  // Old capture flow (CameraX dialog), kept as a fallback if the document scanner is unavailable.
+  fun openLegacyCamera() {
+    if (isCameraGranted) {
+      showCameraXScanner = true
+    } else {
+      permissionRequestedOnce = true
+      cameraPermissionState.launchPermissionRequest()
+    }
+  }
+
+  fun launchDocumentScanner() {
+    val activity = context.findActivity()
+    if (activity == null) {
+      openLegacyCamera()
+      return
+    }
+    val options =
+      GmsDocumentScannerOptions.Builder()
+        .setGalleryImportAllowed(true)
+        .setPageLimit(1)
+        .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+        .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_BASE)
+        .build()
+    GmsDocumentScanning.getClient(options)
+      .getStartScanIntent(activity)
+      .addOnSuccessListener { intentSender ->
+        documentScannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+      }
+      .addOnFailureListener { openLegacyCamera() }
+  }
 
   if (showCreateDialog) {
     CategoryFormDialog(
@@ -393,14 +451,7 @@ fun ScannerScreen(
                   Spacer(modifier = Modifier.height(22.dp))
 
                   Button(
-                    onClick = {
-                      if (isCameraGranted) {
-                        showCameraXScanner = true
-                      } else {
-                        permissionRequestedOnce = true
-                        cameraPermissionState.launchPermissionRequest()
-                      }
-                    },
+                    onClick = { launchDocumentScanner() },
                     modifier =
                       Modifier.fillMaxWidth()
                         .height(52.dp)

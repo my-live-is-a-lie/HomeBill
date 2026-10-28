@@ -78,6 +78,12 @@ data class ReplicaVerifyResult(
   val changedCount: Int,
 )
 
+/** Real stages of a replica request, reported to the UI as they actually start. */
+enum class ReplicaStage {
+  PREPARING,
+  ANALYZING,
+}
+
 /**
  * Asks Gemini to read a bill photo and return every text segment with its position, weight, color,
  * alignment and a font family hint, so the bill can be redrawn with the same layout. It can also
@@ -114,11 +120,17 @@ object GeminiBillLayoutExtractor {
       .create(GeminiApiService::class.java)
   }
 
-  suspend fun extract(context: Context, imageFile: File): Result<ReplicaLayoutDto> =
+  suspend fun extract(
+    context: Context,
+    imageFile: File,
+    onStage: (ReplicaStage) -> Unit = {},
+  ): Result<ReplicaLayoutDto> =
     withContext(Dispatchers.IO) {
       runCatching {
+        onStage(ReplicaStage.PREPARING)
         val apiKey = requireApiKey()
         val base64 = loadImageBase64(context, imageFile)
+        onStage(ReplicaStage.ANALYZING)
         val rawJson =
           callWithFailover(
             apiKey = apiKey,
@@ -176,13 +188,16 @@ object GeminiBillLayoutExtractor {
     context: Context,
     imageFile: File,
     layout: ReplicaLayoutDto,
+    onStage: (ReplicaStage) -> Unit = {},
   ): Result<ReplicaVerifyResult> =
     withContext(Dispatchers.IO) {
       runCatching {
+        onStage(ReplicaStage.PREPARING)
         val apiKey = requireApiKey()
         val base64 = loadImageBase64(context, imageFile)
         val listing =
           layout.textBlocks.mapIndexed { index, block -> "$index\t${block.text}" }.joinToString("\n")
+        onStage(ReplicaStage.ANALYZING)
         val rawJson =
           callWithFailover(
             apiKey = apiKey,

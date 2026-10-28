@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -52,6 +53,7 @@ import com.example.R
 import com.example.data.model.BillRecord
 import com.example.data.remote.GeminiBillLayoutExtractor
 import com.example.data.remote.ReplicaLayoutDto
+import com.example.data.remote.ReplicaStage
 import com.example.util.BillImageStore
 import com.example.util.BillReplicaExporter
 import com.example.util.BillReplicaRenderer
@@ -90,7 +92,8 @@ private fun findBlockIndexAt(layout: ReplicaLayoutDto, nx: Double, ny: Double): 
 /**
  * Redraws the stored bill image as a clean digital replica (same size, text in the same places,
  * closest fonts) and lets the user fix texts by tapping them, optionally proofread the texts with
- * AI, and download the result as JPEG, PDF or Word.
+ * AI, and download the result as JPEG, PDF or Word. While Gemini works, the real stage that is
+ * running is shown as text (no fake percentage).
  */
 @Composable
 fun BillReplicaSection(bill: BillRecord) {
@@ -102,6 +105,7 @@ fun BillReplicaSection(bill: BillRecord) {
     remember(bill.id) { mutableStateOf<ReplicaLayoutDto?>(BillReplicaStore.load(context, bill.id)) }
   var isGenerating by remember(bill.id) { mutableStateOf(false) }
   var isVerifying by remember(bill.id) { mutableStateOf(false) }
+  var stage by remember(bill.id) { mutableStateOf<ReplicaStage?>(null) }
   var errorText by remember(bill.id) { mutableStateOf<String?>(null) }
   var statusNote by remember(bill.id) { mutableStateOf<String?>(null) }
   var editingIndex by remember(bill.id) { mutableStateOf<Int?>(null) }
@@ -113,19 +117,29 @@ fun BillReplicaSection(bill: BillRecord) {
   val saveFailedMessage = stringResource(R.string.bill_replica_save_failed)
   val generateFailedMessage = stringResource(R.string.bill_replica_generate_failed)
   val verifyCleanMessage = stringResource(R.string.bill_replica_verify_clean)
+  val preparingLabel = stringResource(R.string.bill_replica_stage_preparing)
+  val analyzingLabel = stringResource(R.string.bill_replica_stage_analyzing)
+  val drawingLabel = stringResource(R.string.bill_replica_stage_drawing)
+  val verifyPreparingLabel = stringResource(R.string.bill_replica_stage_verify_preparing)
+  val verifyAnalyzingLabel = stringResource(R.string.bill_replica_stage_verify_analyzing)
+  val generateStageLabel = if (stage == ReplicaStage.ANALYZING) analyzingLabel else preparingLabel
+  val verifyStageLabel =
+    if (stage == ReplicaStage.ANALYZING) verifyAnalyzingLabel else verifyPreparingLabel
 
   fun generate() {
     if (isGenerating || isVerifying) return
     isGenerating = true
+    stage = ReplicaStage.PREPARING
     errorText = null
     statusNote = null
     scope.launch {
-      GeminiBillLayoutExtractor.extract(context, imageFile)
+      GeminiBillLayoutExtractor.extract(context, imageFile, onStage = { stage = it })
         .onSuccess { newLayout ->
           withContext(Dispatchers.IO) { BillReplicaStore.save(context, bill.id, newLayout) }
           layout = newLayout
         }
         .onFailure { error -> errorText = error.localizedMessage ?: generateFailedMessage }
+      stage = null
       isGenerating = false
     }
   }
@@ -134,10 +148,11 @@ fun BillReplicaSection(bill: BillRecord) {
     val currentLayout = layout ?: return
     if (isGenerating || isVerifying) return
     isVerifying = true
+    stage = ReplicaStage.PREPARING
     errorText = null
     statusNote = null
     scope.launch {
-      GeminiBillLayoutExtractor.verify(context, imageFile, currentLayout)
+      GeminiBillLayoutExtractor.verify(context, imageFile, currentLayout, onStage = { stage = it })
         .onSuccess { result ->
           if (result.changedCount > 0) {
             withContext(Dispatchers.IO) { BillReplicaStore.save(context, bill.id, result.layout) }
@@ -149,6 +164,7 @@ fun BillReplicaSection(bill: BillRecord) {
           }
         }
         .onFailure { error -> errorText = error.localizedMessage ?: generateFailedMessage }
+      stage = null
       isVerifying = false
     }
   }
@@ -275,12 +291,16 @@ fun BillReplicaSection(bill: BillRecord) {
         if (isGenerating) {
           CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
           Spacer(modifier = Modifier.width(8.dp))
-          Text(text = stringResource(R.string.bill_replica_generating))
+          Text(text = generateStageLabel)
         } else {
           Icon(imageVector = Icons.Default.AutoAwesome, contentDescription = null)
           Spacer(modifier = Modifier.width(8.dp))
           Text(text = stringResource(R.string.bill_replica_generate))
         }
+      }
+      if (isGenerating) {
+        Spacer(modifier = Modifier.height(8.dp))
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
       }
     } else {
       val replicaBitmap by
@@ -292,8 +312,17 @@ fun BillReplicaSection(bill: BillRecord) {
         }
       val shownBitmap = replicaBitmap
       if (shownBitmap == null) {
-        Box(modifier = Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) {
+        Column(
+          horizontalAlignment = Alignment.CenterHorizontally,
+          modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
+        ) {
           CircularProgressIndicator()
+          Spacer(modifier = Modifier.height(8.dp))
+          Text(
+            text = drawingLabel,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
         }
       } else {
         Text(
@@ -380,7 +409,7 @@ fun BillReplicaSection(bill: BillRecord) {
         if (isVerifying) {
           CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
           Spacer(modifier = Modifier.width(8.dp))
-          Text(text = stringResource(R.string.bill_replica_verifying))
+          Text(text = verifyStageLabel)
         } else {
           Icon(imageVector = Icons.Default.Spellcheck, contentDescription = null)
           Spacer(modifier = Modifier.width(8.dp))
@@ -396,12 +425,17 @@ fun BillReplicaSection(bill: BillRecord) {
         if (isGenerating) {
           CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
           Spacer(modifier = Modifier.width(6.dp))
-          Text(text = stringResource(R.string.bill_replica_generating))
+          Text(text = generateStageLabel)
         } else {
           Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
           Spacer(modifier = Modifier.width(6.dp))
           Text(text = stringResource(R.string.bill_replica_regenerate))
         }
+      }
+
+      if (isGenerating || isVerifying) {
+        Spacer(modifier = Modifier.height(4.dp))
+        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
       }
     }
 

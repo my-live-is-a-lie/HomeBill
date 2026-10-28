@@ -8,6 +8,11 @@
   <string name="bill_replica_generate">إعادة رسم الفاتورة (نسخة رقمية)</string>
   <string name="bill_replica_generating">جارٍ إعادة رسم الفاتورة…</string>
   <string name="bill_replica_regenerate">إعادة الرسم من جديد</string>
+  <string name="bill_replica_stage_preparing">تجهيز الصورة…</string>
+  <string name="bill_replica_stage_analyzing">جارٍ التحليل بواسطة Gemini…</string>
+  <string name="bill_replica_stage_drawing">جارٍ الرسم…</string>
+  <string name="bill_replica_stage_verify_preparing">تجهيز الصورة للتدقيق…</string>
+  <string name="bill_replica_stage_verify_analyzing">جارٍ تدقيق النصوص بواسطة Gemini…</string>
   <string name="bill_replica_download_as">تنزيل النسخة الرقمية بصيغة:</string>
   <string name="bill_replica_verify_hint">اختياري: يقارن Gemini النصوص بالصورة الأصلية ويصحح الأخطاء الإملائية والرقمية. يستغرق بضع ثوانٍ، ويبقى من الأفضل أن تراجع النتيجة.</string>
   <string name="bill_replica_verify">تدقيق النصوص بالذكاء الاصطناعي</string>

@@ -2,12 +2,20 @@
 <resources>
   <string name="bill_replica_title">نسخة رقمية مُعاد رسمها من الفاتورة</string>
   <string name="bill_replica_hint">يقرأ Gemini النصوص ومواضعها، ثم تُرسم الفاتورة بنفس الأبعاد وبخطوط قريبة من الأصل.</string>
+  <string name="bill_replica_warning">تنبيه: قد تحتوي النسخة المُعاد رسمها على أخطاء في النصوص أو الأرقام، خصوصًا في الطباعة الباهتة. تحقّق منها بمقارنتها بالصورة الأصلية قبل استخدامها أو مشاركتها.</string>
+  <string name="bill_replica_tap_hint">اضغط على أي نص في الصورة لتصحيحه بنفسك.</string>
+  <string name="bill_replica_edit_title">تصحيح النص</string>
   <string name="bill_replica_generate">إعادة رسم الفاتورة (نسخة رقمية)</string>
   <string name="bill_replica_generating">جارٍ إعادة رسم الفاتورة…</string>
   <string name="bill_replica_regenerate">إعادة الرسم من جديد</string>
   <string name="bill_replica_download_as">تنزيل النسخة الرقمية بصيغة:</string>
+  <string name="bill_replica_verify_hint">اختياري: يقارن Gemini النصوص بالصورة الأصلية ويصحح الأخطاء الإملائية والرقمية. يستغرق بضع ثوانٍ، ويبقى من الأفضل أن تراجع النتيجة.</string>
+  <string name="bill_replica_verify">تدقيق النصوص بالذكاء الاصطناعي</string>
+  <string name="bill_replica_verifying">جارٍ تدقيق النصوص…</string>
+  <string name="bill_replica_verify_done">تم تدقيق النصوص وتصحيح %1$d منها. راجع التغييرات بمقارنتها بالصورة الأصلية.</string>
+  <string name="bill_replica_verify_clean">لم يعثر التدقيق على أخطاء في النصوص.</string>
   <string name="bill_replica_saved_images">تم الحفظ في مجلد Pictures/HomeBill</string>
   <string name="bill_replica_saved_docs">تم الحفظ في مجلد Download/HomeBill</string>
   <string name="bill_replica_save_failed">تعذر حفظ الملف</string>
-  <string name="bill_replica_generate_failed">تعذر إعادة رسم الفاتورة حالياً. أعد المحاولة بعد لحظات.</string>
+  <string name="bill_replica_generate_failed">تعذر إكمال الطلب حالياً. أعد المحاولة بعد لحظات.</string>
 </resources>

@@ -1,16 +1,18 @@
 package com.example.ui.components
 
+import android.graphics.Bitmap
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,10 +20,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Spellcheck
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,6 +42,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -58,9 +66,31 @@ private enum class ReplicaFormat {
   DOCX,
 }
 
+/** Finds the text block under a tap, in the 0..1000 normalized image coordinates. */
+private fun findBlockIndexAt(layout: ReplicaLayoutDto, nx: Double, ny: Double): Int? {
+  val margin = 6.0
+  var bestIndex: Int? = null
+  var bestArea = Double.MAX_VALUE
+  layout.textBlocks.forEachIndexed { index, block ->
+    val left = minOf(block.xmin, block.xmax) - margin
+    val right = maxOf(block.xmin, block.xmax) + margin
+    val top = minOf(block.ymin, block.ymax) - margin
+    val bottom = maxOf(block.ymin, block.ymax) + margin
+    if (nx in left..right && ny in top..bottom) {
+      val area = (right - left) * (bottom - top)
+      if (area < bestArea) {
+        bestArea = area
+        bestIndex = index
+      }
+    }
+  }
+  return bestIndex
+}
+
 /**
  * Redraws the stored bill image as a clean digital replica (same size, text in the same places,
- * closest fonts) and lets the user download it as JPEG, PDF or Word.
+ * closest fonts) and lets the user fix texts by tapping them, optionally proofread the texts with
+ * AI, and download the result as JPEG, PDF or Word.
  */
 @Composable
 fun BillReplicaSection(bill: BillRecord) {
@@ -71,18 +101,24 @@ fun BillReplicaSection(bill: BillRecord) {
   var layout by
     remember(bill.id) { mutableStateOf<ReplicaLayoutDto?>(BillReplicaStore.load(context, bill.id)) }
   var isGenerating by remember(bill.id) { mutableStateOf(false) }
+  var isVerifying by remember(bill.id) { mutableStateOf(false) }
   var errorText by remember(bill.id) { mutableStateOf<String?>(null) }
+  var statusNote by remember(bill.id) { mutableStateOf<String?>(null) }
+  var editingIndex by remember(bill.id) { mutableStateOf<Int?>(null) }
+  var editText by remember(bill.id) { mutableStateOf("") }
 
   val label = bill.providerName.ifBlank { bill.categoryName }
   val savedImageMessage = stringResource(R.string.bill_replica_saved_images)
   val savedDocumentMessage = stringResource(R.string.bill_replica_saved_docs)
   val saveFailedMessage = stringResource(R.string.bill_replica_save_failed)
   val generateFailedMessage = stringResource(R.string.bill_replica_generate_failed)
+  val verifyCleanMessage = stringResource(R.string.bill_replica_verify_clean)
 
   fun generate() {
-    if (isGenerating) return
+    if (isGenerating || isVerifying) return
     isGenerating = true
     errorText = null
+    statusNote = null
     scope.launch {
       GeminiBillLayoutExtractor.extract(context, imageFile)
         .onSuccess { newLayout ->
@@ -91,6 +127,29 @@ fun BillReplicaSection(bill: BillRecord) {
         }
         .onFailure { error -> errorText = error.localizedMessage ?: generateFailedMessage }
       isGenerating = false
+    }
+  }
+
+  fun verify() {
+    val currentLayout = layout ?: return
+    if (isGenerating || isVerifying) return
+    isVerifying = true
+    errorText = null
+    statusNote = null
+    scope.launch {
+      GeminiBillLayoutExtractor.verify(context, imageFile, currentLayout)
+        .onSuccess { result ->
+          if (result.changedCount > 0) {
+            withContext(Dispatchers.IO) { BillReplicaStore.save(context, bill.id, result.layout) }
+            layout = result.layout
+            statusNote =
+              context.getString(R.string.bill_replica_verify_done, result.changedCount)
+          } else {
+            statusNote = verifyCleanMessage
+          }
+        }
+        .onFailure { error -> errorText = error.localizedMessage ?: generateFailedMessage }
+      isVerifying = false
     }
   }
 
@@ -121,6 +180,53 @@ fun BillReplicaSection(bill: BillRecord) {
 
   if (imageSize == null) return
 
+  // Dialog to fix one text by hand (opened by tapping a text in the replica).
+  val dialogIndex = editingIndex
+  val dialogLayout = layout
+  if (dialogIndex != null && dialogLayout != null && dialogIndex in dialogLayout.textBlocks.indices) {
+    AlertDialog(
+      onDismissRequest = { editingIndex = null },
+      title = { Text(text = stringResource(R.string.bill_replica_edit_title)) },
+      text = {
+        OutlinedTextField(
+          value = editText,
+          onValueChange = { editText = it },
+          singleLine = true,
+          modifier = Modifier.fillMaxWidth().testTag("replica_edit_text_input"),
+        )
+      },
+      confirmButton = {
+        TextButton(
+          onClick = {
+            val fixedText = editText.replace('\n', ' ').trim()
+            if (fixedText.isNotEmpty()) {
+              val updated =
+                dialogLayout.copy(
+                  textBlocks =
+                    dialogLayout.textBlocks.mapIndexed { index, block ->
+                      if (index == dialogIndex) block.copy(text = fixedText) else block
+                    }
+                )
+              layout = updated
+              scope.launch {
+                withContext(Dispatchers.IO) { BillReplicaStore.save(context, bill.id, updated) }
+              }
+            }
+            editingIndex = null
+          },
+          modifier = Modifier.testTag("replica_edit_save_button"),
+        ) {
+          Text(text = stringResource(R.string.action_save))
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { editingIndex = null }) {
+          Text(text = stringResource(R.string.action_cancel))
+        }
+      },
+    )
+  }
+
   Column(modifier = Modifier.fillMaxWidth()) {
     Text(
       text = stringResource(R.string.bill_replica_title),
@@ -133,6 +239,31 @@ fun BillReplicaSection(bill: BillRecord) {
       color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
     Spacer(modifier = Modifier.height(8.dp))
+
+    // Always-visible warning: the replica can contain mistakes.
+    Surface(
+      color = MaterialTheme.colorScheme.errorContainer,
+      shape = MaterialTheme.shapes.medium,
+      modifier = Modifier.fillMaxWidth().testTag("bill_replica_warning"),
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(12.dp),
+      ) {
+        Icon(
+          imageVector = Icons.Default.WarningAmber,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.onErrorContainer,
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Text(
+          text = stringResource(R.string.bill_replica_warning),
+          style = MaterialTheme.typography.bodySmall,
+          color = MaterialTheme.colorScheme.onErrorContainer,
+        )
+      }
+    }
+    Spacer(modifier = Modifier.height(10.dp))
 
     val currentLayout = layout
     if (currentLayout == null) {
@@ -153,7 +284,7 @@ fun BillReplicaSection(bill: BillRecord) {
       }
     } else {
       val replicaBitmap by
-        produceState<android.graphics.Bitmap?>(null, currentLayout, imageSize) {
+        produceState<Bitmap?>(null, currentLayout, imageSize) {
           value =
             withContext(Dispatchers.Default) {
               BillReplicaRenderer.renderBitmap(currentLayout, imageSize.first, imageSize.second)
@@ -165,15 +296,37 @@ fun BillReplicaSection(bill: BillRecord) {
           CircularProgressIndicator()
         }
       } else {
+        Text(
+          text = stringResource(R.string.bill_replica_tap_hint),
+          style = MaterialTheme.typography.labelMedium,
+          color = MaterialTheme.colorScheme.primary,
+        )
+        Spacer(modifier = Modifier.height(6.dp))
+        // Full width with the original aspect ratio: a tap maps directly to image coordinates.
         Image(
           bitmap = shownBitmap.asImageBitmap(),
           contentDescription = stringResource(R.string.bill_replica_title),
-          contentScale = ContentScale.Fit,
+          contentScale = ContentScale.FillBounds,
           modifier =
             Modifier.fillMaxWidth()
-              .heightIn(max = 520.dp)
+              .aspectRatio(imageSize.first.toFloat() / imageSize.second.toFloat())
               .clip(MaterialTheme.shapes.medium)
               .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.medium)
+              .pointerInput(currentLayout) {
+                detectTapGestures { tap ->
+                  val boxWidth = size.width.toFloat()
+                  val boxHeight = size.height.toFloat()
+                  if (boxWidth > 0f && boxHeight > 0f) {
+                    val nx = (tap.x / boxWidth * 1000f).toDouble()
+                    val ny = (tap.y / boxHeight * 1000f).toDouble()
+                    val hit = findBlockIndexAt(currentLayout, nx, ny)
+                    if (hit != null) {
+                      editText = currentLayout.textBlocks[hit].text
+                      editingIndex = hit
+                    }
+                  }
+                }
+              }
               .testTag("bill_replica_image"),
         )
       }
@@ -211,9 +364,33 @@ fun BillReplicaSection(bill: BillRecord) {
         }
       }
 
+      // Optional AI proofreading of the extracted texts.
+      Spacer(modifier = Modifier.height(12.dp))
+      Text(
+        text = stringResource(R.string.bill_replica_verify_hint),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      Spacer(modifier = Modifier.height(6.dp))
+      OutlinedButton(
+        onClick = { verify() },
+        enabled = !isGenerating && !isVerifying,
+        modifier = Modifier.fillMaxWidth().height(48.dp).testTag("verify_replica_button"),
+      ) {
+        if (isVerifying) {
+          CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+          Spacer(modifier = Modifier.width(8.dp))
+          Text(text = stringResource(R.string.bill_replica_verifying))
+        } else {
+          Icon(imageVector = Icons.Default.Spellcheck, contentDescription = null)
+          Spacer(modifier = Modifier.width(8.dp))
+          Text(text = stringResource(R.string.bill_replica_verify))
+        }
+      }
+
       TextButton(
         onClick = { generate() },
-        enabled = !isGenerating,
+        enabled = !isGenerating && !isVerifying,
         modifier = Modifier.testTag("regenerate_replica_button"),
       ) {
         if (isGenerating) {
@@ -226,6 +403,16 @@ fun BillReplicaSection(bill: BillRecord) {
           Text(text = stringResource(R.string.bill_replica_regenerate))
         }
       }
+    }
+
+    statusNote?.let { note ->
+      Spacer(modifier = Modifier.height(6.dp))
+      Text(
+        text = note,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(horizontal = 2.dp).testTag("bill_replica_status_note"),
+      )
     }
 
     errorText?.let { message ->

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="bill_replica_title">نسخة رقمية مُعاد رسمها من الفاتورة</string>
+  <string name="bill_replica_hint">يقرأ Gemini النصوص ومواضعها، ثم تُرسم الفاتورة بنفس الأبعاد وبخطوط قريبة من الأصل.</string>
+  <string name="bill_replica_generate">إعادة رسم الفاتورة (نسخة رقمية)</string>
+  <string name="bill_replica_generating">جارٍ إعادة رسم الفاتورة…</string>
+  <string name="bill_replica_regenerate">إعادة الرسم من جديد</string>
+  <string name="bill_replica_download_as">تنزيل النسخة الرقمية بصيغة:</string>
+  <string name="bill_replica_saved_images">تم الحفظ في مجلد Pictures/HomeBill</string>
+  <string name="bill_replica_saved_docs">تم الحفظ في مجلد Download/HomeBill</string>
+  <string name="bill_replica_save_failed">تعذر حفظ الملف</string>
+  <string name="bill_replica_generate_failed">تعذر إعادة رسم الفاتورة حالياً. أعد المحاولة بعد لحظات.</string>
+</resources>

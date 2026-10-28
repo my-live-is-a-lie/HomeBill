@@ -68,6 +68,7 @@ import com.example.ui.screens.SettingsScreen
 import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.BillChatViewModel
 import com.example.ui.viewmodel.HomeBillsViewModel
+import com.example.util.AssistantImageBridge
 import com.google.firebase.Firebase
 import com.google.firebase.auth.auth
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -166,6 +167,8 @@ fun AuthenticatedAppShell(currentUserId: String) {
   val chatConversations by chatVm.conversations.collectAsStateWithLifecycle()
   val isTemporaryChat by chatVm.isTemporaryChat.collectAsStateWithLifecycle()
   val activeChatConversation by chatVm.activeConversation.collectAsStateWithLifecycle()
+  // A bill image the user sent to the assistant from a bill (null when none).
+  val assistantImageAttachment by AssistantImageBridge.attachment.collectAsStateWithLifecycle()
   LaunchedEffect(currentUserId) {
     chatVm.loadHistory(context, currentUserId)
   }
@@ -180,6 +183,16 @@ fun AuthenticatedAppShell(currentUserId: String) {
   }
 
   val navController = rememberNavController()
+
+  // A bill sheet asked to open the assistant with its image: start a fresh conversation and go
+  // there (the back button returns to the bill).
+  LaunchedEffect(Unit) {
+    AssistantImageBridge.openRequests.collect {
+      chatVm.createConversation()
+      navController.navigate(AssistantRoute()) { launchSingleTop = true }
+    }
+  }
+
   val backStackEntry by navController.currentBackStackEntryAsState()
   val currentDest = backStackEntry?.destination
 
@@ -487,12 +500,21 @@ fun AuthenticatedAppShell(currentUserId: String) {
                     analyticsSummary = analyticsSummary,
                   )
                 },
-                onTemporaryChat = { chatVm.enterTemporaryChat() },
+                onTemporaryChat = {
+                  AssistantImageBridge.clear()
+                  chatVm.enterTemporaryChat()
+                },
                 conversations = chatConversations,
                 isTemporaryChat = isTemporaryChat,
                 activeConversation = activeChatConversation,
-                onSelectConversation = { chatVm.selectConversation(it) },
-                onCreateConversation = { chatVm.createConversation() },
+                onSelectConversation = {
+                  AssistantImageBridge.clear()
+                  chatVm.selectConversation(it)
+                },
+                onCreateConversation = {
+                  AssistantImageBridge.clear()
+                  chatVm.createConversation()
+                },
                 onRenameConversation = { id, title -> chatVm.renameConversation(id, title) },
                 onTogglePin = { chatVm.togglePin(it) },
                 onDeleteConversation = { chatVm.deleteConversation(it) },
@@ -504,6 +526,8 @@ fun AuthenticatedAppShell(currentUserId: String) {
                     launchSingleTop = true
                   }
                 },
+                imageAttachment = assistantImageAttachment,
+                onRemoveImageAttachment = { AssistantImageBridge.clear() },
               )
             }
 

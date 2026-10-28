@@ -230,6 +230,10 @@ fun BillSheetModal(
           Spacer(modifier = Modifier.width(8.dp))
           Text(text = stringResource(R.string.bill_image_save_to_gallery))
         }
+
+        // Digital replica of the bill (same size, text in the same places) with JPEG/PDF/Word export
+        Spacer(modifier = Modifier.height(16.dp))
+        BillReplicaSection(bill = bill)
       }
 
       Spacer(modifier = Modifier.height(16.dp))

@@ -224,12 +224,14 @@ fun ScannerScreen(
       openLegacyCamera()
       return
     }
+    // SCANNER_MODE_FULL = crop/rotate + image filters (grayscale, auto-enhance, ...) +
+    // ML-powered cleaning (removes stains / fingers), all available after the capture.
     val options =
       GmsDocumentScannerOptions.Builder()
         .setGalleryImportAllowed(true)
         .setPageLimit(1)
         .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
-        .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_BASE)
+        .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
         .build()
     GmsDocumentScanning.getClient(options)
       .getStartScanIntent(activity)
@@ -671,6 +673,14 @@ private fun ExtractedSheetReviewCard(
               .height(160.dp)
               .clip(MaterialTheme.shapes.large),
         )
+        if (imageUri != Uri.EMPTY) {
+          Spacer(modifier = Modifier.height(6.dp))
+          Text(
+            text = stringResource(R.string.bill_image_will_be_attached),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
         Spacer(modifier = Modifier.height(14.dp))
         Row(
           verticalAlignment = Alignment.CenterVertically,

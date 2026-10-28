@@ -25,6 +25,7 @@ import com.example.domain.BillSearchScope
 import com.example.domain.BudgetDashboardState
 import com.example.domain.MonthlyAnalyticsSummary
 import com.example.domain.MonthlyBudgetDashboardEngine
+import com.example.util.BillImageStore
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +38,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 sealed interface ScanUiState {
   data object Idle : ScanUiState
@@ -56,6 +58,7 @@ class HomeBillsViewModel(
   private val repository: BillRepository,
   private val scanner: GeminiBillScanner,
   val currentUserId: String,
+  private val appContext: Context? = null,
 ) : ViewModel() {
 
   val categoriesState: StateFlow<UiState<List<BillCategory>>> =
@@ -289,10 +292,23 @@ class HomeBillsViewModel(
   fun deleteCategory(categoryId: String, onDeleted: () -> Unit = {}) {
     viewModelScope.launch {
       _isSaving.value = true
+      // Remember the bills of this category so their attached images can be cleaned up too.
+      val billIdsToCleanUp =
+        (allBillsState.value as? UiState.Success)
+          ?.data
+          .orEmpty()
+          .filter { it.categoryId == categoryId }
+          .map { it.id }
       val res = repository.deleteCategoryAndBills(categoryId)
       _isSaving.value = false
       res
         .onSuccess {
+          val ctx = appContext
+          if (ctx != null && billIdsToCleanUp.isNotEmpty()) {
+            withContext(Dispatchers.IO) {
+              billIdsToCleanUp.forEach { BillImageStore.deleteForBill(ctx, it) }
+            }
+          }
           _snackbarMessage.value = "تم حذف قسم الفاتورة وسجلاته"
           onDeleted()
         }
@@ -347,7 +363,13 @@ class HomeBillsViewModel(
     viewModelScope.launch {
       repository
         .deleteBill(billId)
-        .onSuccess { _snackbarMessage.value = "تم حذف الفاتورة" }
+        .onSuccess {
+          val ctx = appContext
+          if (ctx != null) {
+            withContext(Dispatchers.IO) { BillImageStore.deleteForBill(ctx, billId) }
+          }
+          _snackbarMessage.value = "تم حذف الفاتورة"
+        }
         .onFailure { err -> _snackbarMessage.value = err.localizedMessage ?: "تعذر حذف الفاتورة" }
     }
   }
@@ -437,6 +459,9 @@ class HomeBillsViewModel(
     selectedCategoryId: String?,
     onSuccessNavigateToCategory: (String) -> Unit,
   ) {
+    // The scanned (cropped/filtered) image that will be attached to the saved bill.
+    val scannedImageUri: Uri? = (_scanState.value as? ScanUiState.Extracted)?.imageUri
+
     viewModelScope.launch {
       _isSaving.value = true
       val existingCategories = (categoriesState.value as? UiState.Success)?.data.orEmpty()
@@ -512,7 +537,14 @@ class HomeBillsViewModel(
 
           repository
             .createBill(newBill)
-            .onSuccess {
+            .onSuccess { savedBillId ->
+              // Attach the scanned image to the new bill (stored on the phone, keyed by bill id).
+              val ctx = appContext
+              if (ctx != null && scannedImageUri != null) {
+                withContext(Dispatchers.IO) {
+                  BillImageStore.saveForBill(ctx, scannedImageUri, savedBillId)
+                }
+              }
               _isSaving.value = false
               _scanState.value = ScanUiState.Idle
               if (comparison.hasSpike) {
@@ -552,6 +584,7 @@ class HomeBillsViewModel(
           repository = BillRepository(db),
           scanner = GeminiBillScanner(),
           currentUserId = currentUserId,
+          appContext = app.applicationContext,
         )
       }
     }

@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -20,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.WarningAmber
@@ -53,12 +56,15 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.model.BillCategory
 import com.example.data.model.BillRecord
@@ -67,6 +73,7 @@ import com.example.data.model.UtilityType
 import com.example.domain.BillAnalyticsEngine
 import com.example.domain.BillComparisonResult
 import com.example.ui.theme.LocalUtilityPalette
+import com.example.util.BillImageStore
 import com.example.util.BillSheetExporter
 import com.example.util.DateAndFormatUtils
 import java.util.Locale
@@ -81,6 +88,10 @@ fun BillSheetModal(
 ) {
   val context = LocalContext.current
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+  val attachedImage =
+    remember(bill.id) {
+      BillImageStore.imageFile(context, bill.id).takeIf { it.exists() && it.length() > 0L }
+    }
 
   ModalBottomSheet(
     onDismissRequest = onDismiss,
@@ -177,6 +188,47 @@ fun BillSheetModal(
               fontWeight = FontWeight.Bold,
             )
           }
+        }
+      }
+
+      // Original scanned bill image (stored on this phone) with a save-to-gallery action
+      if (attachedImage != null) {
+        val savedMessage = stringResource(R.string.bill_image_saved)
+        val failedMessage = stringResource(R.string.bill_image_save_failed)
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+          text = stringResource(R.string.bill_image_title),
+          style = MaterialTheme.typography.titleSmall,
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        AsyncImage(
+          model = attachedImage,
+          contentDescription = stringResource(R.string.bill_image_content_desc),
+          contentScale = ContentScale.Fit,
+          modifier =
+            Modifier.fillMaxWidth()
+              .heightIn(max = 520.dp)
+              .clip(MaterialTheme.shapes.medium)
+              .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.medium)
+              .testTag("bill_attached_image"),
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedButton(
+          onClick = {
+            val ok =
+              BillImageStore.saveToGallery(
+                context,
+                bill.id,
+                bill.providerName.ifBlank { bill.categoryName },
+              )
+            Toast.makeText(context, if (ok) savedMessage else failedMessage, Toast.LENGTH_LONG)
+              .show()
+          },
+          modifier = Modifier.fillMaxWidth().height(48.dp).testTag("save_bill_image_button"),
+        ) {
+          Icon(imageVector = Icons.Default.Download, contentDescription = null)
+          Spacer(modifier = Modifier.width(8.dp))
+          Text(text = stringResource(R.string.bill_image_save_to_gallery))
         }
       }
 

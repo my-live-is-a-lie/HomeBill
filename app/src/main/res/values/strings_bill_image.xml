@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="bill_image_title">صورة الفاتورة الأصلية</string>
+  <string name="bill_image_content_desc">صورة الفاتورة المحفوظة</string>
+  <string name="bill_image_save_to_gallery">حفظ الصورة في معرض الصور</string>
+  <string name="bill_image_saved">تم حفظ الصورة في المعرض (مجلد Pictures/HomeBill)</string>
+  <string name="bill_image_save_failed">تعذر حفظ الصورة في المعرض</string>
+  <string name="bill_image_will_be_attached">ستُحفظ هذه الصورة مع الفاتورة ويمكنك تنزيلها لاحقًا إلى معرض الصور</string>
+</resources>

@@ -3,12 +3,15 @@ package com.example.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -73,6 +76,10 @@ import com.example.ui.components.VarianceBadge
 import com.example.ui.components.visualSpec
 import com.example.util.BillSheetExporter
 import com.example.util.DateAndFormatUtils
+
+// Buttons that sit side by side have narrow labels that can wrap to two lines. They use a minimum
+// height (never a fixed one) so no text is cut off, and the compact padding leaves more room.
+private val CompactButtonPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -325,30 +332,38 @@ fun CategoryDetailScreen(
 
               Spacer(modifier = Modifier.height(16.dp))
 
+              // Both buttons always get the same height (the taller label decides), never clipped.
               Row(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
               ) {
                 Button(
                   onClick = {
                     editingBill = null
                     showAddOrEditBill = true
                   },
+                  contentPadding = CompactButtonPadding,
                   modifier =
                     Modifier.weight(1f)
-                      .height(48.dp)
+                      .fillMaxHeight()
+                      .heightIn(min = 48.dp)
                       .testTag("add_monthly_bill_button"),
                 ) {
                   Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                   Spacer(modifier = Modifier.width(6.dp))
-                  Text(stringResource(R.string.add_monthly_bill))
+                  Text(
+                    text = stringResource(R.string.add_monthly_bill),
+                    textAlign = TextAlign.Center,
+                  )
                 }
 
                 FilledTonalButton(
                   onClick = { onScanForCategory(category.id) },
+                  contentPadding = CompactButtonPadding,
                   modifier =
                     Modifier.weight(1f)
-                      .height(48.dp)
+                      .fillMaxHeight()
+                      .heightIn(min = 48.dp)
                       .testTag("scan_for_category_button"),
                 ) {
                   Icon(
@@ -357,7 +372,10 @@ fun CategoryDetailScreen(
                     modifier = Modifier.size(18.dp),
                   )
                   Spacer(modifier = Modifier.width(6.dp))
-                  Text(stringResource(R.string.scan_for_category))
+                  Text(
+                    text = stringResource(R.string.scan_for_category),
+                    textAlign = TextAlign.Center,
+                  )
                 }
               }
             }
@@ -540,22 +558,36 @@ private fun MonthlyBillCard(
 
       Spacer(modifier = Modifier.height(12.dp))
 
+      // Same rule as above: equal heights decided by the taller label, nothing clipped.
       Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
       ) {
         FilledTonalButton(
           onClick = onOpenSheet,
-          modifier = Modifier.weight(1f).height(48.dp).testTag("open_sheet_${bill.id}"),
+          contentPadding = CompactButtonPadding,
+          modifier =
+            Modifier.weight(1f)
+              .fillMaxHeight()
+              .heightIn(min = 48.dp)
+              .testTag("open_sheet_${bill.id}"),
         ) {
           Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(18.dp))
           Spacer(modifier = Modifier.width(6.dp))
-          Text(stringResource(R.string.view_bill_sheet))
+          Text(
+            text = stringResource(R.string.view_bill_sheet),
+            textAlign = TextAlign.Center,
+          )
         }
 
         OutlinedButton(
           onClick = onOpenComparison,
-          modifier = Modifier.weight(1f).height(48.dp).testTag("compare_bill_${bill.id}"),
+          contentPadding = CompactButtonPadding,
+          modifier =
+            Modifier.weight(1f)
+              .fillMaxHeight()
+              .heightIn(min = 48.dp)
+              .testTag("compare_bill_${bill.id}"),
         ) {
           Icon(
             Icons.AutoMirrored.Filled.CompareArrows,
@@ -563,7 +595,10 @@ private fun MonthlyBillCard(
             modifier = Modifier.size(18.dp),
           )
           Spacer(modifier = Modifier.width(6.dp))
-          Text(stringResource(R.string.compare_previous_bill))
+          Text(
+            text = stringResource(R.string.compare_previous_bill),
+            textAlign = TextAlign.Center,
+          )
         }
       }
     }

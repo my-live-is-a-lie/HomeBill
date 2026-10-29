@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -313,7 +314,13 @@ fun AuthenticatedAppShell(currentUserId: String) {
         }
       },
     ) { scaffoldPadding ->
-      Row(modifier = Modifier.fillMaxSize().padding(scaffoldPadding)) {
+      // consumeWindowInsets: the bottom bar already accounts for the system bars, so the screens
+      // inside must not add them (or the keyboard height) a second time. Without it a black gap
+      // appeared above the keyboard and above the bottom bar.
+      Row(
+        modifier =
+          Modifier.fillMaxSize().padding(scaffoldPadding).consumeWindowInsets(scaffoldPadding)
+      ) {
         if (isExpanded && showPrimaryNav) {
           NavigationRail(
             modifier = Modifier.fillMaxHeight(),

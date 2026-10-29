@@ -9,6 +9,7 @@ import com.example.data.remote.ChatChartBar
 import com.example.data.remote.ChatStatHighlight
 import com.example.data.remote.GeminiBillChatService
 import com.example.domain.MonthlyAnalyticsSummary
+import com.example.util.AssistantImageBridge
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +27,8 @@ data class BillChatMessage(
   val chartBars: List<ChatChartBar> = emptyList(),
   val followUpSuggestions: List<String> = emptyList(),
   val isError: Boolean = false,
+  // Path of the bill image that was sent together with this user message (null = no image).
+  val imagePath: String? = null,
 )
 
 class BillChatViewModel(
@@ -289,7 +292,10 @@ class BillChatViewModel(
         .drop(1) // Skip static local welcome card to keep turn sequence strictly user -> model
         .map { it.isUser to it.text }
 
-    val userMessage = BillChatMessage(isUser = true, text = trimmed)
+    // The bill image attached to the assistant (if any) is sent with this message and shown in
+    // the message bubble.
+    val attachedImagePath = AssistantImageBridge.attachment.value?.filePath
+    val userMessage = BillChatMessage(isUser = true, text = trimmed, imagePath = attachedImagePath)
     updateActiveMessages(cleanedMessages + userMessage, newUserPrompt = trimmed)
     if (!isDraftActive()) persist()
     executeTurn(

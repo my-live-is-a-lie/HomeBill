@@ -42,7 +42,7 @@ data class ChatImportResult(
  * File format (versioned, so a future format can migrate):
  * {"version":1,"conversations":[{id,title,createdAtMillis,updatedAtMillis,
  *   pinned,modelId,thinkingLevel,messages:[{id,timestampMillis,isUser,text,highlights,
- *   chartTitle,chartBars,followUpSuggestions,isError}]}]}
+ *   chartTitle,chartBars,followUpSuggestions,isError,imagePath?}]}]}
  *
  * Writes are atomic: the new content goes to a temp file first and is then
  * renamed over the old file, so a crash mid-write cannot corrupt history.
@@ -163,6 +163,7 @@ object ChatHistoryStore {
       message.followUpSuggestions.forEach { suggestions.put(it) }
       msg.put("followUpSuggestions", suggestions)
       msg.put("isError", message.isError)
+      if (message.imagePath != null) msg.put("imagePath", message.imagePath)
       messages.put(msg)
     }
     obj.put("messages", messages)
@@ -214,6 +215,7 @@ object ChatHistoryStore {
           chartBars = bars,
           followUpSuggestions = suggestions,
           isError = msg.optBoolean("isError"),
+          imagePath = msg.optString("imagePath").ifBlank { null },
         ),
       )
     }

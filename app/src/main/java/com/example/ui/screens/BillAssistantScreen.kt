@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -116,6 +117,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.model.BillCategory
+import com.example.ui.components.FullscreenImageViewer
 import com.example.ui.viewmodel.ChatConversation
 import com.example.ui.viewmodel.ChatImportResult
 import com.example.data.model.BillRecord
@@ -363,6 +365,7 @@ fun BillAssistantScreen(
           if (msg.isUser) {
             UserChatBubble(
               text = msg.text,
+              imagePath = msg.imagePath,
               timestampMillis = msg.timestampMillis,
               onCopyClick = {
                 clipboardManager.setText(AnnotatedString(msg.text))
@@ -1002,12 +1005,21 @@ private fun AssistantHistoryDrawer(
 }
 
 
+/** A user message; when a bill image was sent with it, the image is shown above the text. */
 @Composable
 private fun UserChatBubble(
   text: String,
+  imagePath: String?,
   timestampMillis: Long,
   onCopyClick: () -> Unit,
 ) {
+  val imageFile =
+    remember(imagePath) { imagePath?.let { File(it) }?.takeIf { it.exists() && it.length() > 0L } }
+  var showFullImage by remember { mutableStateOf(false) }
+  if (showFullImage && imageFile != null) {
+    FullscreenImageViewer(imageFile = imageFile, onDismiss = { showFullImage = false })
+  }
+
   Column(
     modifier = Modifier.fillMaxWidth(),
     horizontalAlignment = Alignment.Start,
@@ -1029,11 +1041,26 @@ private fun UserChatBubble(
           ),
         modifier = Modifier.widthIn(max = 520.dp),
       ) {
-        Text(
-          text = text,
-          style = MaterialTheme.typography.bodyLarge,
-          modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-        )
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+          if (imageFile != null) {
+            AsyncImage(
+              model = imageFile,
+              contentDescription = stringResource(R.string.assistant_image_attached_title),
+              contentScale = ContentScale.Fit,
+              modifier =
+                Modifier.widthIn(max = 220.dp)
+                  .heightIn(max = 200.dp)
+                  .clip(RoundedCornerShape(12.dp))
+                  .clickable { showFullImage = true }
+                  .testTag("chat_message_image"),
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+          }
+          Text(
+            text = text,
+            style = MaterialTheme.typography.bodyLarge,
+          )
+        }
       }
       IconButton(onClick = onCopyClick, modifier = Modifier.size(36.dp)) {
         Icon(

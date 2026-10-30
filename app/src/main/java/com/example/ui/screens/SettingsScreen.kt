@@ -6,7 +6,11 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,16 +19,26 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BrightnessAuto
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Contrast
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Download
@@ -34,11 +48,14 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -48,11 +65,20 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.data.remote.GeminiApiClient
+import com.example.ui.theme.AccentPresets
+import com.example.ui.theme.ThemeMode
+import com.example.ui.theme.ThemeSettingsStore
 import com.example.ui.viewmodel.ChatImportResult
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -71,14 +97,17 @@ fun SettingsScreen(
   onImportChats: (String) -> ChatImportResult = { ChatImportResult(0, 0) },
 ) {
   var showAiKeys by remember { mutableStateOf(false) }
-  if (showAiKeys) {
-    GeminiKeysScreen(onBack = { showAiKeys = false })
-  } else {
-    SettingsHubScreen(
-      onOpenAiKeys = { showAiKeys = true },
-      onExportChats = onExportChats,
-      onImportChats = onImportChats,
-    )
+  // The screen has no top app bar, so keep its content below the status bar.
+  Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
+    if (showAiKeys) {
+      GeminiKeysScreen(onBack = { showAiKeys = false })
+    } else {
+      SettingsHubScreen(
+        onOpenAiKeys = { showAiKeys = true },
+        onExportChats = onExportChats,
+        onImportChats = onImportChats,
+      )
+    }
   }
 }
 
@@ -133,7 +162,18 @@ private fun SettingsHubScreen(
       .padding(16.dp),
     verticalArrangement = Arrangement.spacedBy(16.dp),
   ) {
-    Text(text = "الإعدادات", style = MaterialTheme.typography.titleLarge)
+    // Title on the right (RTL start); the appearance button sits at the left end of the row.
+    Row(
+      modifier = Modifier.fillMaxWidth(),
+      verticalAlignment = Alignment.CenterVertically,
+    ) {
+      Text(
+        text = "الإعدادات",
+        style = MaterialTheme.typography.titleLarge,
+        modifier = Modifier.weight(1f),
+      )
+      ThemeMenuButton()
+    }
     Card(onClick = onOpenAiKeys, modifier = Modifier.fillMaxWidth()) {
       Row(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -183,6 +223,133 @@ private fun SettingsHubScreen(
           }
         }
       }
+    }
+  }
+}
+
+/**
+ * Appearance button (icon only). Opens a popup menu right under it with the theme choices on the
+ * first row (تلقائي / فاتح / غامق / مظلم) and the accent colors below.
+ */
+@Composable
+private fun ThemeMenuButton() {
+  val context = LocalContext.current
+  var expanded by remember { mutableStateOf(false) }
+  val mode = ThemeSettingsStore.mode
+  val accentId = ThemeSettingsStore.accentId
+  // Show swatches in the tone the current theme actually uses.
+  val isDarkNow = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
+  Box {
+    IconButton(
+      onClick = { expanded = true },
+      modifier = Modifier.testTag("theme_menu_button"),
+    ) {
+      Icon(imageVector = Icons.Default.Palette, contentDescription = "المظهر")
+    }
+    DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+      Column(
+        modifier = Modifier.width(264.dp).padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Text(
+          text = "السمة",
+          style = MaterialTheme.typography.labelLarge,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          ThemeMode.values().forEach { option ->
+            ThemeModeButton(
+              mode = option,
+              selected = option == mode,
+              onClick = { ThemeSettingsStore.setMode(context, option) },
+              modifier = Modifier.weight(1f),
+            )
+          }
+        }
+        HorizontalDivider()
+        Text(
+          text = "لون التمييز",
+          style = MaterialTheme.typography.labelLarge,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        AccentPresets.all.chunked(4).forEach { rowItems ->
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+          ) {
+            rowItems.forEach { preset ->
+              val swatch = preset.swatch(isDarkNow)
+              val selected = preset.id == accentId
+              Box(
+                contentAlignment = Alignment.Center,
+                modifier =
+                  Modifier.size(40.dp)
+                    .clip(CircleShape)
+                    .background(swatch)
+                    .then(
+                      if (selected) {
+                        Modifier.border(2.dp, MaterialTheme.colorScheme.onSurface, CircleShape)
+                      } else {
+                        Modifier
+                      }
+                    )
+                    .clickable { ThemeSettingsStore.setAccent(context, preset) }
+                    .semantics { contentDescription = "لون ${preset.nameAr}" }
+                    .testTag("accent_${preset.id}"),
+              ) {
+                if (selected) {
+                  Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = if (swatch.luminance() > 0.5f) Color.Black else Color.White,
+                    modifier = Modifier.size(20.dp),
+                  )
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+@Composable
+private fun ThemeModeButton(
+  mode: ThemeMode,
+  selected: Boolean,
+  onClick: () -> Unit,
+  modifier: Modifier = Modifier,
+) {
+  val (icon, label) =
+    when (mode) {
+      ThemeMode.SYSTEM -> Icons.Default.BrightnessAuto to "تلقائي"
+      ThemeMode.LIGHT -> Icons.Default.LightMode to "فاتح"
+      ThemeMode.DARK -> Icons.Default.DarkMode to "غامق"
+      ThemeMode.BLACK -> Icons.Default.Contrast to "مظلم"
+    }
+  Surface(
+    onClick = onClick,
+    shape = RoundedCornerShape(14.dp),
+    color =
+      if (selected) MaterialTheme.colorScheme.primaryContainer
+      else MaterialTheme.colorScheme.surfaceVariant,
+    contentColor =
+      if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+      else MaterialTheme.colorScheme.onSurfaceVariant,
+    modifier = modifier.testTag("theme_mode_${mode.key}"),
+  ) {
+    Column(
+      horizontalAlignment = Alignment.CenterHorizontally,
+      modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+    ) {
+      Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(22.dp))
+      Spacer(modifier = Modifier.height(4.dp))
+      Text(text = label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
     }
   }
 }

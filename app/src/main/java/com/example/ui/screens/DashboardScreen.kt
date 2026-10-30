@@ -23,12 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -49,7 +44,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -118,13 +112,6 @@ fun DashboardScreen(
   val categoriesById = remember(allCategories) { allCategories.associateBy { it.id } }
   val allBills = (allBillsState as? UiState.Success)?.data.orEmpty()
 
-  val heroImageRequest =
-    remember(context) {
-      ImageRequest.Builder(context)
-        .data(R.drawable.img_hero_dashboard)
-        .crossfade(true)
-        .build()
-    }
   val emptyImageRequest =
     remember(context) {
       ImageRequest.Builder(context)
@@ -247,7 +234,7 @@ fun DashboardScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth(),
       ) {
-        // Hero Banner Card
+        // Hero Banner Card (solid background, no decorative graphics)
         item {
           Card(
             shape = MaterialTheme.shapes.extraLarge,
@@ -258,25 +245,6 @@ fun DashboardScreen(
               modifier =
                 Modifier.fillMaxWidth().background(utilityPalette.heroGradientStart)
             ) {
-              AsyncImage(
-                model = heroImageRequest,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.matchParentSize(),
-              )
-              Box(
-                modifier =
-                  Modifier.matchParentSize()
-                    .background(
-                      Brush.linearGradient(
-                        colors =
-                          listOf(
-                            utilityPalette.heroGradientStart.copy(alpha = 0.92f),
-                            utilityPalette.heroGradientEnd.copy(alpha = 0.84f),
-                          )
-                      )
-                    )
-              )
               Column(modifier = Modifier.padding(20.dp)) {
                 Text(
                   text = stringResource(R.string.dashboard_greeting),
@@ -314,61 +282,6 @@ fun DashboardScreen(
                       modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                     )
                   }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Button(
-                  onClick = onOpenScanner,
-                  colors =
-                    ButtonDefaults.buttonColors(
-                      containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                      contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    ),
-                  shape = MaterialTheme.shapes.large,
-                  modifier =
-                    Modifier.fillMaxWidth()
-                      .height(48.dp)
-                      .testTag("hero_scan_bill_button"),
-                ) {
-                  Icon(
-                    imageVector = Icons.Default.DocumentScanner,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                  )
-                  Spacer(modifier = Modifier.width(8.dp))
-                  Text(
-                    text = stringResource(R.string.scan_bill_cta),
-                    style = MaterialTheme.typography.titleSmall,
-                  )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                OutlinedButton(
-                  onClick = onOpenAssistant,
-                  colors =
-                    ButtonDefaults.outlinedButtonColors(
-                      containerColor = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.18f),
-                      contentColor = androidx.compose.ui.graphics.Color.White,
-                    ),
-                  border = null,
-                  shape = MaterialTheme.shapes.large,
-                  modifier =
-                    Modifier.fillMaxWidth()
-                      .height(48.dp)
-                      .testTag("hero_ask_assistant_button"),
-                ) {
-                  Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    modifier = Modifier.size(19.dp),
-                  )
-                  Spacer(modifier = Modifier.width(8.dp))
-                  Text(
-                    text = stringResource(R.string.hero_ask_assistant_cta),
-                    style = MaterialTheme.typography.titleSmall,
-                  )
                 }
               }
             }

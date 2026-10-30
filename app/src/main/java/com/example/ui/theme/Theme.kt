@@ -3,11 +3,14 @@ package com.example.ui.theme
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -79,8 +82,11 @@ val AppShapes =
 
 /**
  * App theme. [darkTheme] is the device's setting and is used only while the user's theme choice is
- * [ThemeMode.SYSTEM] (the default); an explicit light/dark/black choice and the accent color come
- * from [ThemeSettingsStore].
+ * [ThemeMode.SYSTEM] (the default). An explicit light/dark/black choice, the primary and secondary
+ * accents, and the dynamic-color switch all come from [ThemeSettingsStore].
+ *
+ * With dynamic color on (Android 12+) the whole scheme is taken from the phone's wallpaper and the
+ * accent choices are ignored.
  */
 @Composable
 fun MyApplicationTheme(
@@ -90,7 +96,11 @@ fun MyApplicationTheme(
   val context = LocalContext.current
   ThemeSettingsStore.ensureLoaded(context)
   val mode = ThemeSettingsStore.mode
-  val accent = AccentPresets.byId(ThemeSettingsStore.accentId)
+  val primaryAccent = AccentPresets.byId(ThemeSettingsStore.accentId, AccentRole.PRIMARY)
+  val secondaryAccent =
+    AccentPresets.byId(ThemeSettingsStore.secondaryAccentId, AccentRole.SECONDARY)
+  val dynamicRequested = ThemeSettingsStore.dynamicColor
+  val useDynamic = dynamicRequested && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
   val useDark =
     when (mode) {
@@ -99,12 +109,32 @@ fun MyApplicationTheme(
       ThemeMode.DARK,
       ThemeMode.BLACK -> true
     }
-  val baseScheme = if (useDark) DarkColorScheme else LightColorScheme
+
+  val baseScheme =
+    if (dynamicRequested && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+      if (useDark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+    } else if (useDark) {
+      DarkColorScheme
+    } else {
+      LightColorScheme
+    }
+  val modeScheme = if (mode == ThemeMode.BLACK) baseScheme.asPureBlack() else baseScheme
   val colorScheme =
-    (if (mode == ThemeMode.BLACK) baseScheme.asPureBlack() else baseScheme)
-      .withAccent(accent, useDark)
+    if (useDynamic) {
+      modeScheme
+    } else {
+      modeScheme
+        .withAccent(primaryAccent, AccentRole.PRIMARY, useDark)
+        .withAccent(secondaryAccent, AccentRole.SECONDARY, useDark)
+    }
+
+  val basePalette = if (useDark) DarkUtilityPalette else LightUtilityPalette
   val utilityPalette =
-    (if (useDark) DarkUtilityPalette else LightUtilityPalette).withAccent(accent, useDark)
+    if (useDynamic || primaryAccent.id != AccentRole.PRIMARY.defaultId) {
+      basePalette.withHeroFrom(colorScheme.primary, useDark)
+    } else {
+      basePalette
+    }
 
   // Keep the status/navigation bar icons readable when the app theme differs from the system's.
   val view = LocalView.current

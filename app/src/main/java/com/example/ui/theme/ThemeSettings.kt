@@ -27,8 +27,18 @@ enum class ThemeMode(val key: String) {
 }
 
 /**
- * An accent ("لون التمييز") choice. Only the primary color is specified; its container and
- * "on" colors are derived. The default preset keeps the app's original emerald colors untouched.
+ * Which color family an accent choice applies to. Both roles share the same palette of presets;
+ * each role keeps its own saved choice. [defaultId] is the preset that matches the app's original
+ * colors for that role (emerald for primary, amber for secondary), so choosing it changes nothing.
+ */
+enum class AccentRole(val defaultId: String) {
+  PRIMARY("emerald"),
+  SECONDARY("gold"),
+}
+
+/**
+ * An accent ("لون التمييز") choice. Only one color per brightness is specified; the container and
+ * "on" colors are derived from it.
  */
 data class AccentPreset(
   val id: String,
@@ -36,74 +46,98 @@ data class AccentPreset(
   val lightPrimary: Color,
   val darkPrimary: Color,
 ) {
-  val isDefault: Boolean
-    get() = id == AccentPresets.DEFAULT_ID
-
   /** The color shown in the picker for the current brightness. */
   fun swatch(dark: Boolean): Color = if (dark) darkPrimary else lightPrimary
 }
 
 object AccentPresets {
-  const val DEFAULT_ID = "emerald"
-
   val all: List<AccentPreset> =
     listOf(
-      AccentPreset(DEFAULT_ID, "زمردي", EmeraldPrimaryLight, EmeraldPrimaryDark),
+      AccentPreset("emerald", "زمردي", EmeraldPrimaryLight, EmeraldPrimaryDark),
       AccentPreset("blue", "أزرق", Color(0xFF1D4ED8), Color(0xFF60A5FA)),
       AccentPreset("violet", "بنفسجي", Color(0xFF6D28D9), Color(0xFFA78BFA)),
       AccentPreset("pink", "وردي", Color(0xFFBE185D), Color(0xFFF472B6)),
       AccentPreset("red", "أحمر", Color(0xFFB91C1C), Color(0xFFF87171)),
       AccentPreset("orange", "برتقالي", Color(0xFFC2410C), Color(0xFFFB923C)),
-      AccentPreset("gold", "ذهبي", Color(0xFFA16207), Color(0xFFFACC15)),
+      AccentPreset("gold", "ذهبي", AmberSecondaryLight, AmberSecondaryDark),
       AccentPreset("cyan", "سماوي", Color(0xFF0E7490), Color(0xFF22D3EE)),
     )
 
-  fun byId(id: String?): AccentPreset = all.firstOrNull { it.id == id } ?: all.first()
+  /** The preset with [id], or the default preset of [role] when [id] is missing or unknown. */
+  fun byId(id: String?, role: AccentRole): AccentPreset =
+    all.firstOrNull { it.id == id } ?: all.first { it.id == role.defaultId }
 }
 
 /**
- * Persists the theme mode and accent choice and exposes them as Compose state, so changing one
- * recomposes [MyApplicationTheme] immediately. Values are stored in SharedPreferences and loaded
- * once, the first time the theme is composed.
+ * Persists the theme choices and exposes them as Compose state, so changing one recomposes
+ * [MyApplicationTheme] immediately. Values are stored in SharedPreferences and loaded once, the
+ * first time the theme is composed.
  */
 object ThemeSettingsStore {
   private const val PREFS_NAME = "homebill_theme_prefs"
   private const val KEY_MODE = "theme_mode"
   private const val KEY_ACCENT = "accent_id"
+  private const val KEY_SECONDARY_ACCENT = "secondary_accent_id"
+  private const val KEY_DYNAMIC = "dynamic_color"
 
   private var loaded = false
 
   var mode by mutableStateOf(ThemeMode.SYSTEM)
     private set
 
-  var accentId by mutableStateOf(AccentPresets.DEFAULT_ID)
+  /** Primary accent preset id. */
+  var accentId by mutableStateOf(AccentRole.PRIMARY.defaultId)
+    private set
+
+  var secondaryAccentId by mutableStateOf(AccentRole.SECONDARY.defaultId)
+    private set
+
+  /** Material You: take colors from the phone's wallpaper (Android 12+). */
+  var dynamicColor by mutableStateOf(false)
     private set
 
   fun ensureLoaded(context: Context) {
     if (loaded) return
-    val prefs = context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val prefs = prefs(context)
     mode = ThemeMode.fromKey(prefs.getString(KEY_MODE, null))
-    accentId = AccentPresets.byId(prefs.getString(KEY_ACCENT, null)).id
+    accentId = AccentPresets.byId(prefs.getString(KEY_ACCENT, null), AccentRole.PRIMARY).id
+    secondaryAccentId =
+      AccentPresets.byId(prefs.getString(KEY_SECONDARY_ACCENT, null), AccentRole.SECONDARY).id
+    dynamicColor = prefs.getBoolean(KEY_DYNAMIC, false)
     loaded = true
   }
 
+  fun accentIdFor(role: AccentRole): String =
+    when (role) {
+      AccentRole.PRIMARY -> accentId
+      AccentRole.SECONDARY -> secondaryAccentId
+    }
+
   fun setMode(context: Context, newMode: ThemeMode) {
     mode = newMode
-    context.applicationContext
-      .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-      .edit()
-      .putString(KEY_MODE, newMode.key)
-      .apply()
+    prefs(context).edit().putString(KEY_MODE, newMode.key).apply()
   }
 
-  fun setAccent(context: Context, preset: AccentPreset) {
-    accentId = preset.id
-    context.applicationContext
-      .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-      .edit()
-      .putString(KEY_ACCENT, preset.id)
-      .apply()
+  fun setAccent(context: Context, role: AccentRole, preset: AccentPreset) {
+    when (role) {
+      AccentRole.PRIMARY -> {
+        accentId = preset.id
+        prefs(context).edit().putString(KEY_ACCENT, preset.id).apply()
+      }
+      AccentRole.SECONDARY -> {
+        secondaryAccentId = preset.id
+        prefs(context).edit().putString(KEY_SECONDARY_ACCENT, preset.id).apply()
+      }
+    }
   }
+
+  fun setDynamicColor(context: Context, enabled: Boolean) {
+    dynamicColor = enabled
+    prefs(context).edit().putBoolean(KEY_DYNAMIC, enabled).apply()
+  }
+
+  private fun prefs(context: Context) =
+    context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 }
 
 /** Pure-black variant of the dark scheme: black background, near-black surfaces. */
@@ -116,34 +150,37 @@ internal fun ColorScheme.asPureBlack(): ColorScheme =
     onSurfaceVariant = Color(0xFFB4B4B4),
   )
 
-/** Replaces the primary color family with [accent]; the default accent returns the scheme as is. */
-internal fun ColorScheme.withAccent(accent: AccentPreset, dark: Boolean): ColorScheme {
-  if (accent.isDefault) return this
-  return if (dark) {
-    val p = accent.darkPrimary
-    copy(
-      primary = p,
-      onPrimary = lerp(p, Color.Black, 0.85f),
-      primaryContainer = lerp(p, Color.Black, 0.65f),
-      onPrimaryContainer = lerp(p, Color.White, 0.8f),
-    )
-  } else {
-    val p = accent.lightPrimary
-    copy(
-      primary = p,
-      onPrimary = Color.White,
-      primaryContainer = lerp(p, Color.White, 0.82f),
-      onPrimaryContainer = lerp(p, Color.Black, 0.75f),
-    )
+/**
+ * Replaces the [role] color family (primary or secondary) with [accent]. When [accent] is the
+ * role's default preset the scheme is returned untouched, so the original colors stay exact.
+ */
+internal fun ColorScheme.withAccent(accent: AccentPreset, role: AccentRole, dark: Boolean): ColorScheme {
+  if (accent.id == role.defaultId) return this
+  val tone = accent.swatch(dark)
+  val on = if (dark) lerp(tone, Color.Black, 0.85f) else Color.White
+  val container = if (dark) lerp(tone, Color.Black, 0.65f) else lerp(tone, Color.White, 0.82f)
+  val onContainer = if (dark) lerp(tone, Color.White, 0.8f) else lerp(tone, Color.Black, 0.75f)
+  return when (role) {
+    AccentRole.PRIMARY ->
+      copy(
+        primary = tone,
+        onPrimary = on,
+        primaryContainer = container,
+        onPrimaryContainer = onContainer,
+      )
+    AccentRole.SECONDARY ->
+      copy(
+        secondary = tone,
+        onSecondary = on,
+        secondaryContainer = container,
+        onSecondaryContainer = onContainer,
+      )
   }
 }
 
-/** The hero card follows the accent: a deep shade of it. The default accent keeps its colors. */
-internal fun UtilityColorPalette.withAccent(accent: AccentPreset, dark: Boolean): UtilityColorPalette {
-  if (accent.isDefault) return this
-  val p = accent.swatch(dark)
-  return copy(
-    heroGradientStart = lerp(p, Color.Black, if (dark) 0.7f else 0.35f),
-    heroGradientEnd = lerp(p, Color.Black, if (dark) 0.55f else 0.2f),
+/** The hero card follows the primary color: a deep shade of it. */
+internal fun UtilityColorPalette.withHeroFrom(primary: Color, dark: Boolean): UtilityColorPalette =
+  copy(
+    heroGradientStart = lerp(primary, Color.Black, if (dark) 0.7f else 0.35f),
+    heroGradientEnd = lerp(primary, Color.Black, if (dark) 0.55f else 0.2f),
   )
-}

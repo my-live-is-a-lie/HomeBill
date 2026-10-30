@@ -6,8 +6,11 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -60,6 +63,10 @@ import com.example.data.model.UtilityType
 import com.example.domain.BillComparisonResult
 import com.example.domain.BillSearchScope
 import com.example.util.DateAndFormatUtils
+
+// Side-by-side buttons have narrow labels that can wrap to two lines: they use a minimum height
+// (never a fixed one) and compact padding so no text is cut off.
+private val SearchCardButtonPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
 
 @Composable
 fun BillHistorySearchBarCard(
@@ -313,15 +320,18 @@ fun SearchedBillRecordCard(
 
       Spacer(modifier = Modifier.height(12.dp))
 
+      // Equal heights decided by the taller label; nothing is clipped.
       Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
       ) {
         FilledTonalButton(
           onClick = onOpenSheet,
+          contentPadding = SearchCardButtonPadding,
           modifier =
             Modifier.weight(1f)
-              .height(48.dp)
+              .fillMaxHeight()
+              .heightIn(min = 48.dp)
               .testTag("search_open_sheet_${bill.id}"),
         ) {
           Icon(
@@ -330,15 +340,20 @@ fun SearchedBillRecordCard(
             modifier = Modifier.size(18.dp),
           )
           Spacer(modifier = Modifier.width(6.dp))
-          Text(stringResource(R.string.view_bill_sheet))
+          Text(
+            text = stringResource(R.string.view_bill_sheet),
+            textAlign = TextAlign.Center,
+          )
         }
 
         if (bill.categoryId.isNotBlank()) {
           OutlinedButton(
             onClick = onOpenCategory,
+            contentPadding = SearchCardButtonPadding,
             modifier =
               Modifier.weight(1f)
-                .height(48.dp)
+                .fillMaxHeight()
+                .heightIn(min = 48.dp)
                 .testTag("search_open_category_${bill.id}"),
           ) {
             Icon(
@@ -347,7 +362,10 @@ fun SearchedBillRecordCard(
               modifier = Modifier.size(18.dp),
             )
             Spacer(modifier = Modifier.width(6.dp))
-            Text(stringResource(R.string.bill_search_open_category))
+            Text(
+              text = stringResource(R.string.bill_search_open_category),
+              textAlign = TextAlign.Center,
+            )
           }
         }
       }
@@ -400,7 +418,7 @@ fun BillSearchEmptyStateCard(
       Spacer(modifier = Modifier.height(16.dp))
       FilledTonalButton(
         onClick = onClearSearch,
-        modifier = Modifier.height(48.dp).testTag("bill_search_empty_clear_button"),
+        modifier = Modifier.heightIn(min = 48.dp).testTag("bill_search_empty_clear_button"),
       ) {
         Text(stringResource(R.string.bill_search_reset_action))
       }

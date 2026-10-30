@@ -99,10 +99,13 @@ object BillImageStore {
     }
   }
 
+  /** Deletes the stored image and its cached replica layout (if any). */
   fun deleteForBill(context: Context, billId: String) {
     if (billId.isBlank()) return
     try {
-      imageFile(context, billId).delete()
+      val image = imageFile(context, billId)
+      image.delete()
+      File(image.parentFile, "$billId.layout.json").delete()
     } catch (e: Exception) {
       // Ignore: best-effort cleanup.
     }

@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -96,8 +97,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalClipboardManager
 import kotlinx.coroutines.launch
@@ -108,8 +114,10 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.model.BillCategory
+import com.example.ui.components.FullscreenImageViewer
 import com.example.ui.viewmodel.ChatConversation
 import com.example.ui.viewmodel.ChatImportResult
 import com.example.data.model.BillRecord
@@ -117,7 +125,21 @@ import com.example.data.remote.ChatChartBar
 import com.example.data.remote.ChatStatHighlight
 import com.example.domain.MonthlyAnalyticsSummary
 import com.example.ui.viewmodel.BillChatMessage
+import com.example.util.AssistantImageAttachment
 import com.example.util.DateAndFormatUtils
+import java.io.File
+
+/** Quick questions offered when a bill image is attached; tapping one copies it to the input box. */
+private val imageQuickQuestions =
+  listOf(
+    "ما القيمة الإجمالية لهذه الفاتورة وما تاريخها؟",
+    "لخّص لي محتوى هذه الفاتورة وبنودها الرئيسية",
+    "ما قراءة العداد السابقة والحالية وكمية الاستهلاك؟",
+    "هل توجد رسوم أو غرامات أو ضرائب في هذه الفاتورة؟ اشرحها",
+    "هل تبدو قيمة هذه الفاتورة مرتفعة مقارنة بفواتيري السابقة؟",
+    "اشرح لي بنود هذه الفاتورة بلغة بسيطة",
+    "هل في الفاتورة أي شيء غير واضح أو يحتاج إلى تدقيق؟",
+  )
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -141,8 +163,13 @@ fun BillAssistantScreen(
   onSetConversationModel: (String, String?) -> Unit = { _, _ -> },
   onSetConversationThinkingLevel: (String, String?) -> Unit = { _, _ -> },
   isTemporaryChat: Boolean = false,
+  imageAttachment: AssistantImageAttachment? = null,
+  onRemoveImageAttachment: () -> Unit = {},
 ) {
-  var inputText by rememberSaveable { mutableStateOf("") }
+  var inputValue by
+    rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
+  val inputText = inputValue.text
+  val inputFocusRequester = remember { FocusRequester() }
   val listState = rememberLazyListState()
   val clipboardManager = LocalClipboardManager.current
   val context = LocalContext.current
@@ -338,6 +365,7 @@ fun BillAssistantScreen(
           if (msg.isUser) {
             UserChatBubble(
               text = msg.text,
+              imagePath = msg.imagePath,
               timestampMillis = msg.timestampMillis,
               onCopyClick = {
                 clipboardManager.setText(AnnotatedString(msg.text))
@@ -372,6 +400,19 @@ fun BillAssistantScreen(
         }
       }
 
+      // Bill image sent from a bill: preview + quick questions that fill the input box.
+      if (imageAttachment != null) {
+        ImageAttachmentBar(
+          attachment = imageAttachment,
+          questions = imageQuickQuestions,
+          onRemove = onRemoveImageAttachment,
+          onQuestionClick = { question ->
+            inputValue = TextFieldValue(text = question, selection = TextRange(question.length))
+            inputFocusRequester.requestFocus()
+          },
+        )
+      }
+
       // Composer Bar
       Surface(
         tonalElevation = 3.dp,
@@ -387,8 +428,8 @@ fun BillAssistantScreen(
               .padding(horizontal = 14.dp, vertical = 10.dp),
         ) {
           OutlinedTextField(
-            value = inputText,
-            onValueChange = { inputText = it },
+            value = inputValue,
+            onValueChange = { inputValue = it },
             placeholder = {
               Text(
                 text = stringResource(R.string.assistant_input_placeholder),
@@ -403,12 +444,15 @@ fun BillAssistantScreen(
                 onSend = {
                   val prompt = inputText.trim()
                   if (prompt.isNotEmpty() && !isTyping) {
-                    inputText = ""
+                    inputValue = TextFieldValue("")
                     onSendMessage(prompt)
                   }
                 }
               ),
-            modifier = Modifier.weight(1f).testTag("chat_input_field"),
+            modifier =
+              Modifier.weight(1f)
+                .focusRequester(inputFocusRequester)
+                .testTag("chat_input_field"),
           )
 
           Spacer(modifier = Modifier.width(10.dp))
@@ -418,7 +462,7 @@ fun BillAssistantScreen(
             onClick = {
               val prompt = inputText.trim()
               if (prompt.isNotEmpty() && !isTyping) {
-                inputText = ""
+                inputValue = TextFieldValue("")
                 onSendMessage(prompt)
               }
             },
@@ -440,6 +484,73 @@ fun BillAssistantScreen(
     }
   }
 
+  }
+}
+
+/**
+ * Shown above the composer while a bill image is attached: a small preview with a remove button
+ * and quick questions. Tapping a question copies it into the input box so the user can edit it
+ * or send it as is. The image goes to Gemini with every message until it is removed.
+ */
+@Composable
+private fun ImageAttachmentBar(
+  attachment: AssistantImageAttachment,
+  questions: List<String>,
+  onRemove: () -> Unit,
+  onQuestionClick: (String) -> Unit,
+) {
+  Surface(
+    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+    modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth().testTag("assistant_image_attachment_bar"),
+  ) {
+    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        AsyncImage(
+          model = File(attachment.filePath),
+          contentDescription = null,
+          contentScale = ContentScale.Crop,
+          modifier = Modifier.size(48.dp).clip(MaterialTheme.shapes.small),
+        )
+        Spacer(modifier = Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = stringResource(R.string.assistant_image_attached_title),
+            style = MaterialTheme.typography.labelLarge,
+          )
+          Text(
+            text = attachment.label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+          )
+        }
+        IconButton(
+          onClick = onRemove,
+          modifier = Modifier.testTag("remove_image_attachment_button"),
+        ) {
+          Icon(
+            imageVector = Icons.Default.Close,
+            contentDescription = stringResource(R.string.assistant_image_remove_desc),
+          )
+        }
+      }
+      Spacer(modifier = Modifier.height(4.dp))
+      Text(
+        text = stringResource(R.string.assistant_image_questions_hint),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      Spacer(modifier = Modifier.height(4.dp))
+      LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(questions) { question ->
+          SuggestionChip(
+            onClick = { onQuestionClick(question) },
+            label = { Text(text = question, style = MaterialTheme.typography.labelMedium) },
+          )
+        }
+      }
+    }
   }
 }
 
@@ -894,12 +1005,21 @@ private fun AssistantHistoryDrawer(
 }
 
 
+/** A user message; when a bill image was sent with it, the image is shown above the text. */
 @Composable
 private fun UserChatBubble(
   text: String,
+  imagePath: String?,
   timestampMillis: Long,
   onCopyClick: () -> Unit,
 ) {
+  val imageFile =
+    remember(imagePath) { imagePath?.let { File(it) }?.takeIf { it.exists() && it.length() > 0L } }
+  var showFullImage by remember { mutableStateOf(false) }
+  if (showFullImage && imageFile != null) {
+    FullscreenImageViewer(imageFile = imageFile, onDismiss = { showFullImage = false })
+  }
+
   Column(
     modifier = Modifier.fillMaxWidth(),
     horizontalAlignment = Alignment.Start,
@@ -921,11 +1041,26 @@ private fun UserChatBubble(
           ),
         modifier = Modifier.widthIn(max = 520.dp),
       ) {
-        Text(
-          text = text,
-          style = MaterialTheme.typography.bodyLarge,
-          modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-        )
+        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+          if (imageFile != null) {
+            AsyncImage(
+              model = imageFile,
+              contentDescription = stringResource(R.string.assistant_image_attached_title),
+              contentScale = ContentScale.Fit,
+              modifier =
+                Modifier.widthIn(max = 220.dp)
+                  .heightIn(max = 200.dp)
+                  .clip(RoundedCornerShape(12.dp))
+                  .clickable { showFullImage = true }
+                  .testTag("chat_message_image"),
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+          }
+          Text(
+            text = text,
+            style = MaterialTheme.typography.bodyLarge,
+          )
+        }
       }
       IconButton(onClick = onCopyClick, modifier = Modifier.size(36.dp)) {
         Icon(

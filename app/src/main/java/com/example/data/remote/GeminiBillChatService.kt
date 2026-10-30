@@ -5,6 +5,7 @@ import com.example.data.model.BillCategory
 import com.example.data.model.BillRecord
 import com.example.data.model.UtilityType
 import com.example.domain.MonthlyAnalyticsSummary
+import com.example.util.AssistantImageBridge
 import com.example.util.DateAndFormatUtils
 import java.io.IOException
 import java.util.Locale
@@ -114,7 +115,12 @@ class GeminiBillChatService(
           )
         }
 
-        val systemContext = buildSystemInstruction(categories, allBills, analyticsSummary)
+        // A bill image the user sent from a bill screen (null = normal text-only chat).
+        val attachedImageBase64 = AssistantImageBridge.currentAttachmentBase64()
+
+        val systemContext =
+          buildSystemInstruction(categories, allBills, analyticsSummary) +
+            if (attachedImageBase64 != null) IMAGE_ATTACHMENT_NOTE else ""
 
         // Keep the latest 14 turns to respect context window limits and keep latency fast
         val recentTurns =
@@ -129,7 +135,18 @@ class GeminiBillChatService(
           recentTurns +
             GeminiChatTurn(
               role = "user",
-              parts = listOf(GeminiPart(text = userPrompt)),
+              parts =
+                buildList {
+                  add(GeminiPart(text = userPrompt))
+                  if (attachedImageBase64 != null) {
+                    add(
+                      GeminiPart(
+                        inlineData =
+                          GeminiInlineData(mimeType = "image/jpeg", data = attachedImageBase64)
+                      )
+                    )
+                  }
+                },
             )
 
         // Use lightweight JSON MIME mode without heavy FSM responseSchema compilation to avoid 503 overload
@@ -412,6 +429,10 @@ class GeminiBillChatService(
 
   companion object {
     private const val TAG = "GeminiBillChat"
+
+    // Appended to the system instruction when the user sent a bill image to the assistant.
+    private const val IMAGE_ATTACHMENT_NOTE =
+      "\n\n=== صورة فاتورة مرفقة ===\nأرفق المستخدم صورة فاتورة مع رسالته الحالية. أجب عن أسئلته اعتمادًا على ما تراه فعليًا في الصورة (النصوص والأرقام والبنود)، واذكر بوضوح إن كان جزء من الصورة غير واضح أو لا يمكن قراءته بثقة بدل التخمين، وقارنها ببيانات فواتيره المسجلة أعلاه عند الحاجة. التزم بنفس هيكل JSON المطلوب."
 
     // Strictly approved Gemini models from gemini-api skill in priority failover order
     private val SUPPORTED_CHAT_MODELS =

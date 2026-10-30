@@ -3,6 +3,7 @@ package com.example.ui.components
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -20,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
@@ -73,6 +75,7 @@ import com.example.data.model.UtilityType
 import com.example.domain.BillAnalyticsEngine
 import com.example.domain.BillComparisonResult
 import com.example.ui.theme.LocalUtilityPalette
+import com.example.util.AssistantImageBridge
 import com.example.util.BillImageStore
 import com.example.util.BillSheetExporter
 import com.example.util.DateAndFormatUtils
@@ -92,6 +95,12 @@ fun BillSheetModal(
     remember(bill.id) {
       BillImageStore.imageFile(context, bill.id).takeIf { it.exists() && it.length() > 0L }
     }
+  var showFullImage by remember { mutableStateOf(false) }
+
+  // Full-screen viewer for the original bill image (zoom, pan, X to close).
+  if (showFullImage && attachedImage != null) {
+    FullscreenImageViewer(imageFile = attachedImage, onDismiss = { showFullImage = false })
+  }
 
   ModalBottomSheet(
     onDismissRequest = onDismiss,
@@ -191,25 +200,48 @@ fun BillSheetModal(
         }
       }
 
-      // Original scanned bill image (stored on this phone) with a save-to-gallery action
+      // Original scanned bill image (stored on this phone): tap to open it full screen, AI button
+      // to send it to the assistant, and a save-to-gallery action.
       if (attachedImage != null) {
         val savedMessage = stringResource(R.string.bill_image_saved)
         val failedMessage = stringResource(R.string.bill_image_save_failed)
+        val assistantLabel = bill.providerName.ifBlank { bill.categoryName }
         Spacer(modifier = Modifier.height(16.dp))
-        Text(
-          text = stringResource(R.string.bill_image_title),
-          style = MaterialTheme.typography.titleSmall,
-        )
-        Spacer(modifier = Modifier.height(8.dp))
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          Text(
+            text = stringResource(R.string.bill_image_title),
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.weight(1f),
+          )
+          IconButton(
+            onClick = {
+              AssistantImageBridge.attachAndOpen(attachedImage, assistantLabel)
+              onDismiss()
+            },
+            modifier = Modifier.testTag("ask_assistant_about_image_button"),
+          ) {
+            Icon(
+              imageVector = Icons.Default.AutoAwesome,
+              contentDescription = stringResource(R.string.bill_image_open_assistant_desc),
+              tint = MaterialTheme.colorScheme.primary,
+            )
+          }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
         AsyncImage(
           model = attachedImage,
-          contentDescription = stringResource(R.string.bill_image_content_desc),
+          contentDescription = stringResource(R.string.bill_image_fullscreen_desc),
           contentScale = ContentScale.Fit,
           modifier =
             Modifier.fillMaxWidth()
               .heightIn(max = 520.dp)
               .clip(MaterialTheme.shapes.medium)
               .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.medium)
+              .clickable { showFullImage = true }
               .testTag("bill_attached_image"),
         )
         Spacer(modifier = Modifier.height(8.dp))
@@ -230,6 +262,10 @@ fun BillSheetModal(
           Spacer(modifier = Modifier.width(8.dp))
           Text(text = stringResource(R.string.bill_image_save_to_gallery))
         }
+
+        // Digital replica of the bill (same size, text in the same places) with JPEG/PDF/Word export
+        Spacer(modifier = Modifier.height(16.dp))
+        BillReplicaSection(bill = bill)
       }
 
       Spacer(modifier = Modifier.height(16.dp))

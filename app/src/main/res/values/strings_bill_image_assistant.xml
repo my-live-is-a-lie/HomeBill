@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="bill_image_open_assistant_desc">اسأل المساعد عن هذه الصورة</string>
+  <string name="bill_image_fullscreen_desc">اضغط على الصورة لعرضها بملء الشاشة</string>
+  <string name="bill_image_close_desc">إغلاق</string>
+  <string name="assistant_image_attached_title">صورة فاتورة مرفقة بالمحادثة</string>
+  <string name="assistant_image_remove_desc">إزالة الصورة المرفقة</string>
+  <string name="assistant_image_questions_hint">اضغط على سؤال لنسخه إلى صندوق الكتابة، ثم عدّله أو أرسله كما هو.</string>
+</resources>

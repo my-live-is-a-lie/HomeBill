@@ -257,21 +257,13 @@ fun BillAssistantScreen(
           title = {
           Box {
             Column {
-              Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable { showModelMenu = true },
-              ) {
-                Text(
-                  text = modelLabel(activeConversation?.modelId),
-                  style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold,
-                )
-                Icon(
-                  imageVector = Icons.Default.KeyboardArrowDown,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
+              // Model name + thinking level in one capsule, like other AI chat apps.
+              ModelThinkingCapsule(
+                modelText = modelLabel(activeConversation?.modelId),
+                thinkingText = activeConversation?.thinkingLevel?.let { thinkingLabel(it) },
+                onClick = { showModelMenu = true },
+              )
+              Spacer(modifier = Modifier.height(2.dp))
               Text(
                 text =
                   if (isTemporaryChat) {
@@ -505,6 +497,51 @@ fun BillAssistantScreen(
     }
   }
 
+  }
+}
+
+/**
+ * Model name and thinking level in a single capsule that opens the model menu when tapped.
+ * The thinking level is shown in a muted color before the model name (as "Low Sonnet 5.5" in
+ * other AI apps); when the level is automatic only the model name is shown.
+ */
+@Composable
+private fun ModelThinkingCapsule(
+  modelText: String,
+  thinkingText: String?,
+  onClick: () -> Unit,
+) {
+  Surface(
+    onClick = onClick,
+    shape = CircleShape,
+    color = MaterialTheme.colorScheme.surfaceVariant,
+    modifier = Modifier.testTag("model_thinking_capsule"),
+  ) {
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      modifier = Modifier.padding(start = 14.dp, end = 8.dp, top = 5.dp, bottom = 5.dp),
+    ) {
+      if (thinkingText != null) {
+        Text(
+          text = thinkingText,
+          style = MaterialTheme.typography.titleSmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+      }
+      Text(
+        text = modelText,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface,
+      )
+      Icon(
+        imageVector = Icons.Default.KeyboardArrowDown,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(18.dp),
+      )
+    }
   }
 }
 
@@ -1026,7 +1063,10 @@ private fun AssistantHistoryDrawer(
 }
 
 
-/** A user message; when a bill image was sent with it, the image is shown above the text. */
+/**
+ * A user message; when a bill image was sent with it, the image is shown above the text.
+ * The timestamp and the copy button sit below the bubble.
+ */
 @Composable
 private fun UserChatBubble(
   text: String,
@@ -1045,59 +1085,57 @@ private fun UserChatBubble(
     modifier = Modifier.fillMaxWidth(),
     horizontalAlignment = Alignment.Start,
   ) {
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.Start,
-      verticalAlignment = Alignment.CenterVertically,
+    Surface(
+      color = MaterialTheme.colorScheme.primary,
+      contentColor = MaterialTheme.colorScheme.onPrimary,
+      shape =
+        RoundedCornerShape(
+          topStart = 20.dp,
+          topEnd = 6.dp,
+          bottomStart = 20.dp,
+          bottomEnd = 20.dp,
+        ),
+      modifier = Modifier.widthIn(max = 520.dp),
     ) {
-      Surface(
-        color = MaterialTheme.colorScheme.primary,
-        contentColor = MaterialTheme.colorScheme.onPrimary,
-        shape =
-          RoundedCornerShape(
-            topStart = 20.dp,
-            topEnd = 6.dp,
-            bottomStart = 20.dp,
-            bottomEnd = 20.dp,
-          ),
-        modifier = Modifier.widthIn(max = 520.dp),
-      ) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-          if (imageFile != null) {
-            AsyncImage(
-              model = imageFile,
-              contentDescription = stringResource(R.string.assistant_image_attached_title),
-              contentScale = ContentScale.Fit,
-              modifier =
-                Modifier.widthIn(max = 220.dp)
-                  .heightIn(max = 200.dp)
-                  .clip(RoundedCornerShape(12.dp))
-                  .clickable { showFullImage = true }
-                  .testTag("chat_message_image"),
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-          }
-          Text(
-            text = text,
-            style = MaterialTheme.typography.bodyLarge,
+      Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
+        if (imageFile != null) {
+          AsyncImage(
+            model = imageFile,
+            contentDescription = stringResource(R.string.assistant_image_attached_title),
+            contentScale = ContentScale.Fit,
+            modifier =
+              Modifier.widthIn(max = 220.dp)
+                .heightIn(max = 200.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .clickable { showFullImage = true }
+                .testTag("chat_message_image"),
           )
+          Spacer(modifier = Modifier.height(8.dp))
         }
+        Text(
+          text = text,
+          style = MaterialTheme.typography.bodyLarge,
+        )
       }
-      IconButton(onClick = onCopyClick, modifier = Modifier.size(36.dp)) {
+    }
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      modifier = Modifier.padding(start = 4.dp),
+    ) {
+      Text(
+        text = formatRelativeTime(timestampMillis),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      IconButton(onClick = onCopyClick, modifier = Modifier.size(32.dp)) {
         Icon(
           imageVector = Icons.Default.ContentCopy,
           contentDescription = "نسخ الرسالة",
           tint = MaterialTheme.colorScheme.onSurfaceVariant,
-          modifier = Modifier.size(17.dp),
+          modifier = Modifier.size(16.dp),
         )
       }
     }
-    Text(
-      text = formatRelativeTime(timestampMillis),
-      style = MaterialTheme.typography.labelSmall,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      modifier = Modifier.padding(start = 4.dp, top = 2.dp),
-    )
   }
 }
 
@@ -1138,49 +1176,29 @@ private fun AssistantChatCard(
       modifier = Modifier.fillMaxWidth(),
     ) {
       Column(modifier = Modifier.padding(16.dp)) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-              imageVector = Icons.Default.AutoAwesome,
-              contentDescription = null,
-              tint =
-                if (message.isError) {
-                  MaterialTheme.colorScheme.error
-                } else {
-                  MaterialTheme.colorScheme.primary
-                },
-              modifier = Modifier.size(18.dp),
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-              text = stringResource(R.string.assistant_title),
-              style = MaterialTheme.typography.labelLarge,
-              color =
-                if (message.isError) {
-                  MaterialTheme.colorScheme.onErrorContainer
-                } else {
-                  MaterialTheme.colorScheme.primary
-                },
-            )
-          }
-
-          if (!message.isError) {
-            IconButton(
-              onClick = onCopyClick,
-              modifier = Modifier.size(36.dp),
-            ) {
-              Icon(
-                imageVector = Icons.Default.ContentCopy,
-                contentDescription = stringResource(R.string.assistant_copy_desc),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(17.dp),
-              )
-            }
-          }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Icon(
+            imageVector = Icons.Default.AutoAwesome,
+            contentDescription = null,
+            tint =
+              if (message.isError) {
+                MaterialTheme.colorScheme.error
+              } else {
+                MaterialTheme.colorScheme.primary
+              },
+            modifier = Modifier.size(18.dp),
+          )
+          Spacer(modifier = Modifier.width(6.dp))
+          Text(
+            text = stringResource(R.string.assistant_title),
+            style = MaterialTheme.typography.labelLarge,
+            color =
+              if (message.isError) {
+                MaterialTheme.colorScheme.onErrorContainer
+              } else {
+                MaterialTheme.colorScheme.primary
+              },
+          )
         }
 
         Spacer(modifier = Modifier.height(6.dp))
@@ -1193,18 +1211,6 @@ private fun AssistantChatCard(
               MaterialTheme.colorScheme.onErrorContainer
             } else {
               MaterialTheme.colorScheme.onSurface
-            },
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-          text = formatRelativeTime(timestampMillis),
-          style = MaterialTheme.typography.labelSmall,
-          color =
-            if (message.isError) {
-              MaterialTheme.colorScheme.onErrorContainer
-            } else {
-              MaterialTheme.colorScheme.onSurfaceVariant
             },
         )
 
@@ -1268,6 +1274,38 @@ private fun AssistantChatCard(
             bars = message.chartBars,
             fallbackUnit = primaryCurrency,
           )
+        }
+
+        // Footer: timestamp and the copy button at the bottom of the message.
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = formatRelativeTime(timestampMillis),
+            style = MaterialTheme.typography.labelSmall,
+            color =
+              if (message.isError) {
+                MaterialTheme.colorScheme.onErrorContainer
+              } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+              },
+          )
+          if (!message.isError) {
+            IconButton(
+              onClick = onCopyClick,
+              modifier = Modifier.size(32.dp),
+            ) {
+              Icon(
+                imageVector = Icons.Default.ContentCopy,
+                contentDescription = stringResource(R.string.assistant_copy_desc),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(17.dp),
+              )
+            }
+          }
         }
       }
     }

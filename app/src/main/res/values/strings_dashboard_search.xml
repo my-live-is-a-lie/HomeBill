@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Search bar that replaces the categories title on the dashboard -->
+    <string name="dashboard_header_search_hint">البحث...</string>
+    <string name="dashboard_header_search_open_desc">بحث في الفواتير</string>
+    <string name="dashboard_header_search_close_desc">إغلاق البحث</string>
+</resources>

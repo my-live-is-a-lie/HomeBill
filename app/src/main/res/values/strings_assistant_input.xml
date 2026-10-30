@@ -1,0 +1,4 @@
+<resources>
+    <!-- Short hint inside the assistant capsule input bar -->
+    <string name="assistant_input_hint">اسأل عن فواتيرك</string>
+</resources>

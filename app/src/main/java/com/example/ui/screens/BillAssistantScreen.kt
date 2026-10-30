@@ -30,6 +30,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -100,6 +101,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextRange
@@ -413,71 +415,85 @@ fun BillAssistantScreen(
         )
       }
 
-      // Composer Bar
-      Surface(
-        tonalElevation = 3.dp,
-        shadowElevation = 4.dp,
-        color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxWidth(),
+      // Composer Bar: a floating capsule (pill) like other AI chat apps.
+      val canSend = inputText.isNotBlank() && !isTyping
+      val submitInput: () -> Unit = {
+        val prompt = inputText.trim()
+        if (prompt.isNotEmpty() && !isTyping) {
+          inputValue = TextFieldValue("")
+          onSendMessage(prompt)
+        }
+      }
+      Box(
+        modifier =
+          Modifier.widthIn(max = 760.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 10.dp),
       ) {
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          modifier =
-            Modifier.widthIn(max = 760.dp)
-              .fillMaxWidth()
-              .padding(horizontal = 14.dp, vertical = 10.dp),
+        Surface(
+          color = MaterialTheme.colorScheme.surfaceVariant,
+          shape = RoundedCornerShape(30.dp),
+          tonalElevation = 2.dp,
+          shadowElevation = 2.dp,
+          modifier = Modifier.fillMaxWidth(),
         ) {
-          OutlinedTextField(
-            value = inputValue,
-            onValueChange = { inputValue = it },
-            placeholder = {
-              Text(
-                text = stringResource(R.string.assistant_input_placeholder),
-                style = MaterialTheme.typography.bodyMedium,
-              )
-            },
-            maxLines = 4,
-            shape = MaterialTheme.shapes.extraLarge,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-            keyboardActions =
-              KeyboardActions(
-                onSend = {
-                  val prompt = inputText.trim()
-                  if (prompt.isNotEmpty() && !isTyping) {
-                    inputValue = TextFieldValue("")
-                    onSendMessage(prompt)
-                  }
-                }
-              ),
-            modifier =
-              Modifier.weight(1f)
-                .focusRequester(inputFocusRequester)
-                .testTag("chat_input_field"),
-          )
-
-          Spacer(modifier = Modifier.width(10.dp))
-
-          val canSend = inputText.isNotBlank() && !isTyping
-          FilledIconButton(
-            onClick = {
-              val prompt = inputText.trim()
-              if (prompt.isNotEmpty() && !isTyping) {
-                inputValue = TextFieldValue("")
-                onSendMessage(prompt)
-              }
-            },
-            enabled = canSend,
-            colors =
-              IconButtonDefaults.filledIconButtonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-              ),
-            modifier = Modifier.size(50.dp).testTag("chat_send_button"),
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(start = 20.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
           ) {
-            Icon(
-              imageVector = Icons.AutoMirrored.Filled.Send,
-              contentDescription = stringResource(R.string.assistant_send_desc),
+            BasicTextField(
+              value = inputValue,
+              onValueChange = { inputValue = it },
+              maxLines = 5,
+              textStyle =
+                MaterialTheme.typography.bodyLarge.copy(
+                  color = MaterialTheme.colorScheme.onSurface
+                ),
+              cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+              keyboardActions = KeyboardActions(onSend = { submitInput() }),
+              decorationBox = { innerTextField ->
+                Box(
+                  contentAlignment = Alignment.CenterStart,
+                  modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
+                ) {
+                  if (inputText.isEmpty()) {
+                    Text(
+                      text = stringResource(R.string.assistant_input_hint),
+                      style = MaterialTheme.typography.bodyLarge,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                  }
+                  innerTextField()
+                }
+              },
+              modifier =
+                Modifier.weight(1f)
+                  .focusRequester(inputFocusRequester)
+                  .testTag("chat_input_field"),
             )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            FilledIconButton(
+              onClick = submitInput,
+              enabled = canSend,
+              colors =
+                IconButtonDefaults.filledIconButtonColors(
+                  containerColor = MaterialTheme.colorScheme.primary,
+                  contentColor = MaterialTheme.colorScheme.onPrimary,
+                  disabledContainerColor =
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                  disabledContentColor =
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                ),
+              modifier = Modifier.size(44.dp).testTag("chat_send_button"),
+            ) {
+              Icon(
+                imageVector = Icons.AutoMirrored.Filled.Send,
+                contentDescription = stringResource(R.string.assistant_send_desc),
+              )
+            }
           }
         }
       }

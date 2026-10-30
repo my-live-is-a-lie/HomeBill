@@ -3,8 +3,11 @@ package com.example.ui.screens
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,24 +33,22 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PushPin
@@ -57,7 +58,6 @@ import androidx.compose.material.icons.filled.TipsAndUpdates
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -71,7 +71,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.material3.IconButtonDefaults
@@ -100,6 +99,8 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextRange
@@ -212,7 +213,12 @@ fun BillAssistantScreen(
   ModalNavigationDrawer(
     drawerState = drawerState,
     drawerContent = {
-      ModalDrawerSheet {
+      // Gemini-style drawer: flat, full-height, no rounded edge, same background as the app.
+      ModalDrawerSheet(
+        drawerShape = RectangleShape,
+        drawerContainerColor = MaterialTheme.colorScheme.background,
+        drawerTonalElevation = 0.dp,
+      ) {
         AssistantHistoryDrawer(
           conversations = conversations,
           activeConversationId = activeConversation?.id,
@@ -254,21 +260,13 @@ fun BillAssistantScreen(
           title = {
           Box {
             Column {
-              Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.clickable { showModelMenu = true },
-              ) {
-                Text(
-                  text = modelLabel(activeConversation?.modelId),
-                  style = MaterialTheme.typography.titleMedium,
-                  fontWeight = FontWeight.Bold,
-                )
-                Icon(
-                  imageVector = Icons.Default.KeyboardArrowDown,
-                  contentDescription = null,
-                  tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-              }
+              // Model name + thinking level in one capsule, like other AI chat apps.
+              ModelThinkingCapsule(
+                modelText = modelLabel(activeConversation?.modelId),
+                thinkingText = activeConversation?.thinkingLevel?.let { thinkingLabel(it) },
+                onClick = { showModelMenu = true },
+              )
+              Spacer(modifier = Modifier.height(2.dp))
               Text(
                 text =
                   if (isTemporaryChat) {
@@ -413,77 +411,140 @@ fun BillAssistantScreen(
         )
       }
 
-      // Composer Bar
-      Surface(
-        tonalElevation = 3.dp,
-        shadowElevation = 4.dp,
-        color = MaterialTheme.colorScheme.surface,
-        modifier = Modifier.fillMaxWidth(),
+      // Composer Bar: a floating capsule (pill) like other AI chat apps.
+      val canSend = inputText.isNotBlank() && !isTyping
+      val submitInput: () -> Unit = {
+        val prompt = inputText.trim()
+        if (prompt.isNotEmpty() && !isTyping) {
+          inputValue = TextFieldValue("")
+          onSendMessage(prompt)
+        }
+      }
+      Box(
+        modifier =
+          Modifier.widthIn(max = 760.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 10.dp),
       ) {
-        Row(
-          verticalAlignment = Alignment.CenterVertically,
-          modifier =
-            Modifier.widthIn(max = 760.dp)
-              .fillMaxWidth()
-              .padding(horizontal = 14.dp, vertical = 10.dp),
+        Surface(
+          color = MaterialTheme.colorScheme.surfaceVariant,
+          shape = RoundedCornerShape(30.dp),
+          tonalElevation = 2.dp,
+          shadowElevation = 2.dp,
+          modifier = Modifier.fillMaxWidth(),
         ) {
-          OutlinedTextField(
-            value = inputValue,
-            onValueChange = { inputValue = it },
-            placeholder = {
-              Text(
-                text = stringResource(R.string.assistant_input_placeholder),
-                style = MaterialTheme.typography.bodyMedium,
-              )
-            },
-            maxLines = 4,
-            shape = MaterialTheme.shapes.extraLarge,
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-            keyboardActions =
-              KeyboardActions(
-                onSend = {
-                  val prompt = inputText.trim()
-                  if (prompt.isNotEmpty() && !isTyping) {
-                    inputValue = TextFieldValue("")
-                    onSendMessage(prompt)
-                  }
-                }
-              ),
-            modifier =
-              Modifier.weight(1f)
-                .focusRequester(inputFocusRequester)
-                .testTag("chat_input_field"),
-          )
-
-          Spacer(modifier = Modifier.width(10.dp))
-
-          val canSend = inputText.isNotBlank() && !isTyping
-          FilledIconButton(
-            onClick = {
-              val prompt = inputText.trim()
-              if (prompt.isNotEmpty() && !isTyping) {
-                inputValue = TextFieldValue("")
-                onSendMessage(prompt)
-              }
-            },
-            enabled = canSend,
-            colors =
-              IconButtonDefaults.filledIconButtonColors(
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-              ),
-            modifier = Modifier.size(50.dp).testTag("chat_send_button"),
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(start = 20.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
           ) {
-            Icon(
-              imageVector = Icons.AutoMirrored.Filled.Send,
-              contentDescription = stringResource(R.string.assistant_send_desc),
+            BasicTextField(
+              value = inputValue,
+              onValueChange = { inputValue = it },
+              maxLines = 5,
+              textStyle =
+                MaterialTheme.typography.bodyLarge.copy(
+                  color = MaterialTheme.colorScheme.onSurface
+                ),
+              cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+              keyboardActions = KeyboardActions(onSend = { submitInput() }),
+              decorationBox = { innerTextField ->
+                Box(
+                  contentAlignment = Alignment.CenterStart,
+                  modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
+                ) {
+                  if (inputText.isEmpty()) {
+                    Text(
+                      text = stringResource(R.string.assistant_input_hint),
+                      style = MaterialTheme.typography.bodyLarge,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                  }
+                  innerTextField()
+                }
+              },
+              modifier =
+                Modifier.weight(1f)
+                  .focusRequester(inputFocusRequester)
+                  .testTag("chat_input_field"),
             )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            // Dim while there is nothing to send; filled with the accent color once the user
+            // has typed something, so it is clear the button is usable.
+            // ArrowForward is auto-mirrored: it points left in the RTL (Arabic) layout.
+            FilledIconButton(
+              onClick = submitInput,
+              enabled = canSend,
+              colors =
+                IconButtonDefaults.filledIconButtonColors(
+                  containerColor = MaterialTheme.colorScheme.primary,
+                  contentColor = MaterialTheme.colorScheme.onPrimary,
+                  disabledContainerColor =
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                  disabledContentColor =
+                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                ),
+              modifier = Modifier.size(44.dp).testTag("chat_send_button"),
+            ) {
+              Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = stringResource(R.string.assistant_send_desc),
+                modifier = Modifier.size(24.dp),
+              )
+            }
           }
         }
       }
     }
   }
 
+  }
+}
+
+/**
+ * Model name and thinking level in a single capsule that opens the model menu when tapped.
+ * The thinking level is shown in a muted color before the model name (as "Low Sonnet 5.5" in
+ * other AI apps); when the level is automatic only the model name is shown.
+ */
+@Composable
+private fun ModelThinkingCapsule(
+  modelText: String,
+  thinkingText: String?,
+  onClick: () -> Unit,
+) {
+  Surface(
+    onClick = onClick,
+    shape = CircleShape,
+    color = MaterialTheme.colorScheme.surfaceVariant,
+    modifier = Modifier.testTag("model_thinking_capsule"),
+  ) {
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      modifier = Modifier.padding(start = 14.dp, end = 8.dp, top = 5.dp, bottom = 5.dp),
+    ) {
+      if (thinkingText != null) {
+        Text(
+          text = thinkingText,
+          style = MaterialTheme.typography.titleSmall,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+      }
+      Text(
+        text = modelText,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.onSurface,
+      )
+      Icon(
+        imageVector = Icons.Default.KeyboardArrowDown,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.size(18.dp),
+      )
+    }
   }
 }
 
@@ -725,11 +786,16 @@ private fun GeminiModelMenu(
 }
 
 /**
- * Gemini-style side drawer: "محادثة جديدة" and "دردشة مؤقتة" at the top,
- * then the saved conversations, then backup (export/import) at the bottom.
- * Per-conversation actions live in a 3-dot menu on each row, as in other
- * AI apps, instead of a row full of icons.
+ * Gemini-style side drawer, flat and minimal:
+ *  - top row: search and close icons (search turns the row into a search field);
+ *  - a "محادثة جديدة" pill;
+ *  - a "الكل" header with a filter icon that opens the sort menu;
+ *  - the conversations as plain text rows. Long-press a row for pin / rename / delete.
+ *
+ * [isTemporaryChat] and [onTemporary] are kept in the signature so callers do not change;
+ * the temporary chat is opened from the button in the top bar.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun AssistantHistoryDrawer(
   conversations: List<ChatConversation>,
@@ -748,8 +814,14 @@ private fun AssistantHistoryDrawer(
   var deleteTarget by remember { mutableStateOf<ChatConversation?>(null) }
   var overflowId by remember { mutableStateOf<String?>(null) }
   var searchQuery by remember { mutableStateOf("") }
+  var searchActive by remember { mutableStateOf(false) }
+  val searchFocusRequester = remember { FocusRequester() }
   var sortMode by remember { mutableStateOf(0) } // 0 = الأحدث، 1 = الأقدم، 2 = الاسم
   var showSortMenu by remember { mutableStateOf(false) }
+
+  LaunchedEffect(searchActive) {
+    if (searchActive) searchFocusRequester.requestFocus()
+  }
 
   // Pinned conversations stay on top in every sort mode; the mode orders
   // within the pinned and unpinned groups.
@@ -767,51 +839,116 @@ private fun AssistantHistoryDrawer(
           },
       )
 
-  Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-      Text(
-        text = stringResource(R.string.assistant_title),
-        style = MaterialTheme.typography.titleLarge,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.weight(1f),
-      )
-      IconButton(onClick = onClose) {
-        Icon(imageVector = Icons.Default.Close, contentDescription = "إغلاق")
+  Column(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 8.dp)) {
+    // Top row: search + close, or the search field when search is active.
+    if (searchActive) {
+      Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(28.dp),
+        modifier = Modifier.fillMaxWidth().height(52.dp),
+      ) {
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          modifier = Modifier.padding(start = 16.dp, end = 4.dp),
+        ) {
+          Icon(
+            imageVector = Icons.Default.Search,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+          Spacer(modifier = Modifier.width(10.dp))
+          BasicTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            singleLine = true,
+            textStyle =
+              MaterialTheme.typography.bodyLarge.copy(
+                color = MaterialTheme.colorScheme.onSurface
+              ),
+            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+            decorationBox = { innerTextField ->
+              Box(contentAlignment = Alignment.CenterStart) {
+                if (searchQuery.isEmpty()) {
+                  Text(
+                    text = "بحث في المحادثات",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
+                innerTextField()
+              }
+            },
+            modifier =
+              Modifier.weight(1f)
+                .focusRequester(searchFocusRequester)
+                .testTag("conversation_search_field"),
+          )
+          IconButton(
+            onClick = {
+              searchQuery = ""
+              searchActive = false
+            },
+          ) {
+            Icon(imageVector = Icons.Default.Close, contentDescription = "إغلاق البحث")
+          }
+        }
+      }
+    } else {
+      Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.End,
+      ) {
+        IconButton(
+          onClick = { searchActive = true },
+          modifier = Modifier.testTag("conversation_search_button"),
+        ) {
+          Icon(imageVector = Icons.Default.Search, contentDescription = "بحث في المحادثات")
+        }
+        IconButton(onClick = onClose) {
+          Icon(imageVector = Icons.Default.Close, contentDescription = "إغلاق")
+        }
       }
     }
+
     Spacer(modifier = Modifier.height(12.dp))
-    Button(onClick = onCreate, modifier = Modifier.fillMaxWidth()) {
-      Icon(imageVector = Icons.Default.Add, contentDescription = null)
-      Spacer(modifier = Modifier.width(6.dp))
-      Text(text = stringResource(R.string.chat_history_new))
-    }
-    Spacer(modifier = Modifier.height(8.dp))
-    NavigationDrawerItem(
-      label = { Text(text = "دردشة مؤقتة") },
-      selected = isTemporaryChat,
-      onClick = onTemporary,
-      icon = { Icon(imageVector = Icons.Default.Bolt, contentDescription = null) },
-      badge = {
+
+    // New conversation pill
+    Surface(
+      onClick = onCreate,
+      color = MaterialTheme.colorScheme.surfaceVariant,
+      shape = RoundedCornerShape(28.dp),
+      modifier = Modifier.fillMaxWidth().height(56.dp).testTag("new_chat_button"),
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(horizontal = 20.dp),
+      ) {
+        Icon(imageVector = Icons.Default.Edit, contentDescription = null)
+        Spacer(modifier = Modifier.width(12.dp))
         Text(
-          text = "لا تُحفظ",
-          style = MaterialTheme.typography.labelSmall,
-          color = MaterialTheme.colorScheme.onSurfaceVariant,
+          text = stringResource(R.string.chat_history_new),
+          style = MaterialTheme.typography.titleMedium,
         )
-      },
-    )
-    Spacer(modifier = Modifier.height(8.dp))
-    HorizontalDivider()
-    Spacer(modifier = Modifier.height(8.dp))
+      }
+    }
+
+    Spacer(modifier = Modifier.height(20.dp))
+
+    // Section header: "الكل" with the sort/filter menu
     Row(verticalAlignment = Alignment.CenterVertically) {
       Text(
-        text = "المحادثات",
+        text = "الكل",
         style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.Bold,
-        modifier = Modifier.weight(1f),
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
       )
       Box {
         IconButton(onClick = { showSortMenu = true }) {
-          Icon(imageVector = Icons.Default.Sort, contentDescription = "فرز المحادثات")
+          Icon(
+            imageVector = Icons.Default.FilterList,
+            contentDescription = "فرز المحادثات",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
         }
         DropdownMenu(
           expanded = showSortMenu,
@@ -834,70 +971,65 @@ private fun AssistantHistoryDrawer(
         }
       }
     }
-    Spacer(modifier = Modifier.height(8.dp))
-    OutlinedTextField(
-      value = searchQuery,
-      onValueChange = { searchQuery = it },
-      placeholder = { Text(text = "بحث في المحادثات") },
-      leadingIcon = { Icon(imageVector = Icons.Default.Search, contentDescription = null) },
-      trailingIcon = {
-        if (searchQuery.isNotEmpty()) {
-          IconButton(onClick = { searchQuery = "" }) {
-            Icon(imageVector = Icons.Default.Close, contentDescription = "مسح البحث")
-          }
-        }
-      },
-      singleLine = true,
-      modifier = Modifier.fillMaxWidth(),
-    )
-    Spacer(modifier = Modifier.height(8.dp))
+
+    Spacer(modifier = Modifier.height(4.dp))
+
     if (conversations.isEmpty()) {
       Text(
         text = stringResource(R.string.chat_history_empty),
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 12.dp),
       )
     } else if (displayedConversations.isEmpty()) {
       Text(
         text = "لا نتائج مطابقة للبحث",
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 12.dp),
       )
     } else {
       LazyColumn(
         modifier = Modifier.weight(1f),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
       ) {
         items(displayedConversations, key = { it.id }) { conversation ->
+          val isSelected = conversation.id == activeConversationId
           Box {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-              NavigationDrawerItem(
-                label = {
-                  Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                      text = conversation.title,
-                      maxLines = 1,
-                      overflow = TextOverflow.Ellipsis,
-                      modifier = Modifier.weight(1f),
-                    )
-                    if (conversation.pinned) {
-                      Icon(
-                        imageVector = Icons.Default.PushPin,
-                        contentDescription = "مثبتة",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(16.dp),
-                      )
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              modifier =
+                Modifier.fillMaxWidth()
+                  .clip(RoundedCornerShape(16.dp))
+                  .background(
+                    if (isSelected) {
+                      MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    } else {
+                      androidx.compose.ui.graphics.Color.Transparent
                     }
-                  }
-                },
-                selected = conversation.id == activeConversationId,
-                onClick = { onSelect(conversation.id) },
+                  )
+                  .combinedClickable(
+                    onClick = { onSelect(conversation.id) },
+                    onLongClick = { overflowId = conversation.id },
+                  )
+                  .padding(horizontal = 12.dp, vertical = 14.dp)
+                  .testTag("conversation_item_${conversation.id}"),
+            ) {
+              Text(
+                text = conversation.title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
               )
-              IconButton(onClick = { overflowId = conversation.id }) {
+              if (conversation.pinned) {
+                Spacer(modifier = Modifier.width(8.dp))
                 Icon(
-                  imageVector = Icons.Default.MoreVert,
-                  contentDescription = "خيارات المحادثة",
+                  imageVector = Icons.Default.PushPin,
+                  contentDescription = "مثبتة",
+                  tint = MaterialTheme.colorScheme.primary,
+                  modifier = Modifier.size(16.dp),
                 )
               }
             }
@@ -1005,7 +1137,10 @@ private fun AssistantHistoryDrawer(
 }
 
 
-/** A user message; when a bill image was sent with it, the image is shown above the text. */
+/**
+ * A user message. A bill image sent with it is shown on its own above the bubble, so the
+ * colored bubble surrounds only the text. The timestamp and copy button sit below.
+ */
 @Composable
 private fun UserChatBubble(
   text: String,
@@ -1024,11 +1159,23 @@ private fun UserChatBubble(
     modifier = Modifier.fillMaxWidth(),
     horizontalAlignment = Alignment.Start,
   ) {
-    Row(
-      modifier = Modifier.fillMaxWidth(),
-      horizontalArrangement = Arrangement.Start,
-      verticalAlignment = Alignment.CenterVertically,
-    ) {
+    if (imageFile != null) {
+      AsyncImage(
+        model = imageFile,
+        contentDescription = stringResource(R.string.assistant_image_attached_title),
+        contentScale = ContentScale.Fit,
+        modifier =
+          Modifier.widthIn(max = 240.dp)
+            .heightIn(max = 280.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable { showFullImage = true }
+            .testTag("chat_message_image"),
+      )
+      if (text.isNotBlank()) {
+        Spacer(modifier = Modifier.height(6.dp))
+      }
+    }
+    if (text.isNotBlank()) {
       Surface(
         color = MaterialTheme.colorScheme.primary,
         contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -1041,42 +1188,31 @@ private fun UserChatBubble(
           ),
         modifier = Modifier.widthIn(max = 520.dp),
       ) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-          if (imageFile != null) {
-            AsyncImage(
-              model = imageFile,
-              contentDescription = stringResource(R.string.assistant_image_attached_title),
-              contentScale = ContentScale.Fit,
-              modifier =
-                Modifier.widthIn(max = 220.dp)
-                  .heightIn(max = 200.dp)
-                  .clip(RoundedCornerShape(12.dp))
-                  .clickable { showFullImage = true }
-                  .testTag("chat_message_image"),
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-          }
-          Text(
-            text = text,
-            style = MaterialTheme.typography.bodyLarge,
-          )
-        }
+        Text(
+          text = text,
+          style = MaterialTheme.typography.bodyLarge,
+          modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+        )
       }
-      IconButton(onClick = onCopyClick, modifier = Modifier.size(36.dp)) {
+    }
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      modifier = Modifier.padding(start = 4.dp),
+    ) {
+      Text(
+        text = formatRelativeTime(timestampMillis),
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      IconButton(onClick = onCopyClick, modifier = Modifier.size(32.dp)) {
         Icon(
           imageVector = Icons.Default.ContentCopy,
           contentDescription = "نسخ الرسالة",
           tint = MaterialTheme.colorScheme.onSurfaceVariant,
-          modifier = Modifier.size(17.dp),
+          modifier = Modifier.size(16.dp),
         )
       }
     }
-    Text(
-      text = formatRelativeTime(timestampMillis),
-      style = MaterialTheme.typography.labelSmall,
-      color = MaterialTheme.colorScheme.onSurfaceVariant,
-      modifier = Modifier.padding(start = 4.dp, top = 2.dp),
-    )
   }
 }
 
@@ -1117,49 +1253,29 @@ private fun AssistantChatCard(
       modifier = Modifier.fillMaxWidth(),
     ) {
       Column(modifier = Modifier.padding(16.dp)) {
-        Row(
-          modifier = Modifier.fillMaxWidth(),
-          horizontalArrangement = Arrangement.SpaceBetween,
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-              imageVector = Icons.Default.AutoAwesome,
-              contentDescription = null,
-              tint =
-                if (message.isError) {
-                  MaterialTheme.colorScheme.error
-                } else {
-                  MaterialTheme.colorScheme.primary
-                },
-              modifier = Modifier.size(18.dp),
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-              text = stringResource(R.string.assistant_title),
-              style = MaterialTheme.typography.labelLarge,
-              color =
-                if (message.isError) {
-                  MaterialTheme.colorScheme.onErrorContainer
-                } else {
-                  MaterialTheme.colorScheme.primary
-                },
-            )
-          }
-
-          if (!message.isError) {
-            IconButton(
-              onClick = onCopyClick,
-              modifier = Modifier.size(36.dp),
-            ) {
-              Icon(
-                imageVector = Icons.Default.ContentCopy,
-                contentDescription = stringResource(R.string.assistant_copy_desc),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(17.dp),
-              )
-            }
-          }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+          Icon(
+            imageVector = Icons.Default.AutoAwesome,
+            contentDescription = null,
+            tint =
+              if (message.isError) {
+                MaterialTheme.colorScheme.error
+              } else {
+                MaterialTheme.colorScheme.primary
+              },
+            modifier = Modifier.size(18.dp),
+          )
+          Spacer(modifier = Modifier.width(6.dp))
+          Text(
+            text = stringResource(R.string.assistant_title),
+            style = MaterialTheme.typography.labelLarge,
+            color =
+              if (message.isError) {
+                MaterialTheme.colorScheme.onErrorContainer
+              } else {
+                MaterialTheme.colorScheme.primary
+              },
+          )
         }
 
         Spacer(modifier = Modifier.height(6.dp))
@@ -1172,18 +1288,6 @@ private fun AssistantChatCard(
               MaterialTheme.colorScheme.onErrorContainer
             } else {
               MaterialTheme.colorScheme.onSurface
-            },
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-        Text(
-          text = formatRelativeTime(timestampMillis),
-          style = MaterialTheme.typography.labelSmall,
-          color =
-            if (message.isError) {
-              MaterialTheme.colorScheme.onErrorContainer
-            } else {
-              MaterialTheme.colorScheme.onSurfaceVariant
             },
         )
 
@@ -1248,29 +1352,82 @@ private fun AssistantChatCard(
             fallbackUnit = primaryCurrency,
           )
         }
+
+        // Footer: timestamp and the copy button at the bottom of the message.
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.SpaceBetween,
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          Text(
+            text = formatRelativeTime(timestampMillis),
+            style = MaterialTheme.typography.labelSmall,
+            color =
+              if (message.isError) {
+                MaterialTheme.colorScheme.onErrorContainer
+              } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+              },
+          )
+          if (!message.isError) {
+            IconButton(
+              onClick = onCopyClick,
+              modifier = Modifier.size(32.dp),
+            ) {
+              Icon(
+                imageVector = Icons.Default.ContentCopy,
+                contentDescription = stringResource(R.string.assistant_copy_desc),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(17.dp),
+              )
+            }
+          }
+        }
       }
     }
 
     if (showSuggestions && message.followUpSuggestions.isNotEmpty()) {
-      Spacer(modifier = Modifier.height(8.dp))
+      Spacer(modifier = Modifier.height(4.dp))
+      // Compact suggestions: tight vertical gaps so more of the conversation stays visible.
       FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxWidth(),
       ) {
         message.followUpSuggestions.forEach { suggestion ->
-          SuggestionChip(
+          CompactSuggestionChip(
+            text = suggestion,
             onClick = { onSuggestionClick(suggestion) },
-            label = {
-              Text(
-                text = suggestion,
-                style = MaterialTheme.typography.labelMedium,
-              )
-            },
           )
         }
       }
     }
+  }
+}
+
+/**
+ * Outlined suggestion pill with a compact height. Material's SuggestionChip reserves a 48dp
+ * touch target around a 32dp chip, which adds big empty gaps between stacked chips; this one
+ * is sized by its content (about 32dp) so the suggestions take less vertical space.
+ */
+@Composable
+private fun CompactSuggestionChip(
+  text: String,
+  onClick: () -> Unit,
+) {
+  Surface(
+    onClick = onClick,
+    shape = RoundedCornerShape(16.dp),
+    color = androidx.compose.ui.graphics.Color.Transparent,
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+  ) {
+    Text(
+      text = text,
+      style = MaterialTheme.typography.labelMedium,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+    )
   }
 }
 

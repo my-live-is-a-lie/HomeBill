@@ -544,12 +544,16 @@ fun ScannerScreen(
           }
         }
 
-        // Separate "add bill" button below the scan card.
+        // Separate "add bill" button below the scan card. On the start screen it has the same
+        // width and height as the camera / gallery buttons inside the card: the card pads its
+        // content by 24dp, so the button is inset by the same amount.
         item {
+          val isStartScreen = scanState is ScanUiState.Idle || scanState is ScanUiState.Error
           Button(
             onClick = { showCreateDialog = true },
             modifier =
               Modifier.fillMaxWidth()
+                .padding(horizontal = if (isStartScreen) 24.dp else 0.dp)
                 .height(52.dp)
                 .testTag("add_bill_from_scanner_button"),
           ) {

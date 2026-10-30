@@ -1,5 +1,8 @@
 package com.example.ui.theme
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -8,9 +11,13 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 
 private val LightColorScheme =
   lightColorScheme(
@@ -70,13 +77,45 @@ val AppShapes =
     extraLarge = RoundedCornerShape(28.dp),
   )
 
+/**
+ * App theme. [darkTheme] is the device's setting and is used only while the user's theme choice is
+ * [ThemeMode.SYSTEM] (the default); an explicit light/dark/black choice and the accent color come
+ * from [ThemeSettingsStore].
+ */
 @Composable
 fun MyApplicationTheme(
   darkTheme: Boolean = isSystemInDarkTheme(),
   content: @Composable () -> Unit,
 ) {
-  val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
-  val utilityPalette = if (darkTheme) DarkUtilityPalette else LightUtilityPalette
+  val context = LocalContext.current
+  ThemeSettingsStore.ensureLoaded(context)
+  val mode = ThemeSettingsStore.mode
+  val accent = AccentPresets.byId(ThemeSettingsStore.accentId)
+
+  val useDark =
+    when (mode) {
+      ThemeMode.SYSTEM -> darkTheme
+      ThemeMode.LIGHT -> false
+      ThemeMode.DARK,
+      ThemeMode.BLACK -> true
+    }
+  val baseScheme = if (useDark) DarkColorScheme else LightColorScheme
+  val colorScheme =
+    (if (mode == ThemeMode.BLACK) baseScheme.asPureBlack() else baseScheme)
+      .withAccent(accent, useDark)
+  val utilityPalette =
+    (if (useDark) DarkUtilityPalette else LightUtilityPalette).withAccent(accent, useDark)
+
+  // Keep the status/navigation bar icons readable when the app theme differs from the system's.
+  val view = LocalView.current
+  if (!view.isInEditMode) {
+    SideEffect {
+      val window = view.context.findActivity()?.window ?: return@SideEffect
+      val controller = WindowCompat.getInsetsController(window, view)
+      controller.isAppearanceLightStatusBars = !useDark
+      controller.isAppearanceLightNavigationBars = !useDark
+    }
+  }
 
   CompositionLocalProvider(
     LocalLayoutDirection provides LayoutDirection.Rtl,
@@ -90,3 +129,10 @@ fun MyApplicationTheme(
     )
   }
 }
+
+private tailrec fun Context.findActivity(): Activity? =
+  when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+  }

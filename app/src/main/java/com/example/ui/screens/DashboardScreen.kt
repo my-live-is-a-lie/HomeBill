@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,10 +20,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -37,18 +44,25 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
@@ -66,7 +80,6 @@ import com.example.domain.MonthlyAnalyticsSummary
 import com.example.domain.MonthlyBudgetDashboardEngine
 import com.example.ui.components.BillComparisonModal
 import com.example.ui.components.BillFormBottomSheet
-import com.example.ui.components.BillHistorySearchBarCard
 import com.example.ui.components.BillSearchEmptyStateCard
 import com.example.ui.components.BillSearchResultsHeader
 import com.example.ui.components.BillSheetModal
@@ -111,6 +124,20 @@ fun DashboardScreen(
   val allCategories = (categoriesState as? UiState.Success)?.data.orEmpty()
   val categoriesById = remember(allCategories) { allCategories.associateBy { it.id } }
   val allBills = (allBillsState as? UiState.Success)?.data.orEmpty()
+
+  // Search is an icon next to the categories title; tapping it swaps the title for a search bar.
+  var searchActive by rememberSaveable { mutableStateOf(searchQuery.isNotBlank()) }
+  val searchFocusRequester = remember { FocusRequester() }
+  val focusManager = LocalFocusManager.current
+  val closeSearch: () -> Unit = {
+    focusManager.clearFocus()
+    onClearSearch()
+    searchActive = false
+  }
+  BackHandler(enabled = searchActive) { closeSearch() }
+  LaunchedEffect(searchActive) {
+    if (searchActive) runCatching { searchFocusRequester.requestFocus() }
+  }
 
   val emptyImageRequest =
     remember(context) {
@@ -288,25 +315,68 @@ fun DashboardScreen(
           }
         }
 
-        // Firestore Bill History Search Bar
-        item {
-          BillHistorySearchBarCard(
-            searchQuery = searchQuery,
-            searchScope = searchScope,
-            onSearchQueryChange = onSearchQueryChange,
-            onSearchScopeChange = onSearchScopeChange,
-            onClearSearch = onClearSearch,
-          )
-        }
-
-        // Household Budget & Monthly Category Expenses Overview Card
-        if (searchQuery.isBlank()) {
+        // Household Budget & Monthly Category Expenses Overview Card (hidden while searching)
+        if (!searchActive) {
           item {
             HomeBudgetOverviewCard(
               dashboardState = effectiveBudgetState,
               onOpenChartsDashboard = onOpenAnalyticsDashboard,
               onEditBudgetClick = { showBudgetDialog = true },
             )
+          }
+        }
+
+        // Active High-Variance Alerts Section (hidden while searching)
+        if (!searchActive && analyticsSummary.activeAlerts.isNotEmpty()) {
+          item {
+            Text(
+              text = stringResource(R.string.dashboard_alerts_title),
+              style = MaterialTheme.typography.titleMedium,
+              modifier = Modifier.padding(top = 4.dp),
+            )
+          }
+          items(analyticsSummary.activeAlerts, key = { "alert_${it.bill.id}" }) { alertItem ->
+            VarianceAlertBannerCard(
+              alert = alertItem,
+              onOpenComparison = { activeComparison = alertItem.comparison },
+            )
+          }
+        }
+
+        // Categories header: title + search icon, or the search bar that replaces the title.
+        item(key = "categories_header") {
+          if (searchActive) {
+            DashboardSearchField(
+              query = searchQuery,
+              onQueryChange = onSearchQueryChange,
+              onClose = closeSearch,
+              onSearchAction = { focusManager.clearFocus() },
+              focusRequester = searchFocusRequester,
+            )
+          } else {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              modifier = Modifier.fillMaxWidth(),
+            ) {
+              Text(
+                text = stringResource(R.string.dashboard_categories_section),
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.weight(1f),
+              )
+              IconButton(
+                onClick = {
+                  // The simplified search always looks across store, date and category.
+                  onSearchScopeChange(BillSearchScope.ALL)
+                  searchActive = true
+                },
+                modifier = Modifier.testTag("dashboard_search_button"),
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Search,
+                  contentDescription = stringResource(R.string.dashboard_header_search_open_desc),
+                )
+              }
+            }
           }
         }
 
@@ -343,12 +413,12 @@ fun DashboardScreen(
               item {
                 BillSearchResultsHeader(
                   resultsCount = matchedBills.size,
-                  onClearSearch = onClearSearch,
+                  onClearSearch = closeSearch,
                 )
               }
               if (matchedBills.isEmpty()) {
                 item {
-                  BillSearchEmptyStateCard(onClearSearch = onClearSearch)
+                  BillSearchEmptyStateCard(onClearSearch = closeSearch)
                 }
               } else {
                 items(matchedBills, key = { "search_bill_${it.id}" }) { bill ->
@@ -379,32 +449,6 @@ fun DashboardScreen(
               }
             }
           }
-        }
-
-        // Active High-Variance Alerts Section
-        if (searchQuery.isBlank() && analyticsSummary.activeAlerts.isNotEmpty()) {
-          item {
-            Text(
-              text = stringResource(R.string.dashboard_alerts_title),
-              style = MaterialTheme.typography.titleMedium,
-              modifier = Modifier.padding(top = 4.dp),
-            )
-          }
-          items(analyticsSummary.activeAlerts, key = { "alert_${it.bill.id}" }) { alertItem ->
-            VarianceAlertBannerCard(
-              alert = alertItem,
-              onOpenComparison = { activeComparison = alertItem.comparison },
-            )
-          }
-        }
-
-        // Categories Section Header
-        item {
-          Text(
-            text = stringResource(R.string.dashboard_categories_section),
-            style = MaterialTheme.typography.titleMedium,
-            modifier = Modifier.padding(top = 4.dp),
-          )
         }
 
         when (categoriesState) {
@@ -539,6 +583,69 @@ fun DashboardScreen(
             }
           }
         }
+      }
+    }
+  }
+}
+
+/**
+ * Simple search bar that replaces the categories title while searching: a search icon, the
+ * query field with the hint "البحث..." and a close button that ends the search.
+ */
+@Composable
+private fun DashboardSearchField(
+  query: String,
+  onQueryChange: (String) -> Unit,
+  onClose: () -> Unit,
+  onSearchAction: () -> Unit,
+  focusRequester: FocusRequester,
+) {
+  Surface(
+    color = MaterialTheme.colorScheme.surfaceVariant,
+    shape = RoundedCornerShape(28.dp),
+    modifier = Modifier.fillMaxWidth().height(52.dp),
+  ) {
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      modifier = Modifier.padding(start = 16.dp, end = 4.dp),
+    ) {
+      Icon(
+        imageVector = Icons.Default.Search,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      Spacer(modifier = Modifier.width(10.dp))
+      BasicTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        singleLine = true,
+        textStyle =
+          MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { onSearchAction() }),
+        decorationBox = { innerTextField ->
+          Box(contentAlignment = Alignment.CenterStart) {
+            if (query.isEmpty()) {
+              Text(
+                text = stringResource(R.string.dashboard_header_search_hint),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+            innerTextField()
+          }
+        },
+        modifier = Modifier.weight(1f).focusRequester(focusRequester).testTag("dashboard_search_field"),
+      )
+      IconButton(
+        onClick = onClose,
+        modifier = Modifier.testTag("dashboard_search_close_button"),
+      ) {
+        Icon(
+          imageVector = Icons.Default.Close,
+          contentDescription = stringResource(R.string.dashboard_header_search_close_desc),
+        )
       }
     }
   }

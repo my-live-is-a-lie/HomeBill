@@ -3,6 +3,7 @@ package com.example.ui.screens
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -34,8 +35,8 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.ContentCopy
@@ -475,6 +476,9 @@ fun BillAssistantScreen(
 
             Spacer(modifier = Modifier.width(8.dp))
 
+            // Dim while there is nothing to send; filled with the accent color once the user
+            // has typed something, so it is clear the button is usable.
+            // ArrowForward is auto-mirrored: it points left in the RTL (Arabic) layout.
             FilledIconButton(
               onClick = submitInput,
               enabled = canSend,
@@ -490,8 +494,9 @@ fun BillAssistantScreen(
               modifier = Modifier.size(44.dp).testTag("chat_send_button"),
             ) {
               Icon(
-                imageVector = Icons.AutoMirrored.Filled.Send,
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                 contentDescription = stringResource(R.string.assistant_send_desc),
+                modifier = Modifier.size(24.dp),
               )
             }
           }
@@ -1268,25 +1273,46 @@ private fun AssistantChatCard(
     }
 
     if (showSuggestions && message.followUpSuggestions.isNotEmpty()) {
-      Spacer(modifier = Modifier.height(8.dp))
+      Spacer(modifier = Modifier.height(4.dp))
+      // Compact suggestions: tight vertical gaps so more of the conversation stays visible.
       FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier.fillMaxWidth(),
       ) {
         message.followUpSuggestions.forEach { suggestion ->
-          SuggestionChip(
+          CompactSuggestionChip(
+            text = suggestion,
             onClick = { onSuggestionClick(suggestion) },
-            label = {
-              Text(
-                text = suggestion,
-                style = MaterialTheme.typography.labelMedium,
-              )
-            },
           )
         }
       }
     }
+  }
+}
+
+/**
+ * Outlined suggestion pill with a compact height. Material's SuggestionChip reserves a 48dp
+ * touch target around a 32dp chip, which adds big empty gaps between stacked chips; this one
+ * is sized by its content (about 32dp) so the suggestions take less vertical space.
+ */
+@Composable
+private fun CompactSuggestionChip(
+  text: String,
+  onClick: () -> Unit,
+) {
+  Surface(
+    onClick = onClick,
+    shape = RoundedCornerShape(16.dp),
+    color = androidx.compose.ui.graphics.Color.Transparent,
+    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+  ) {
+    Text(
+      text = text,
+      style = MaterialTheme.typography.labelMedium,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+    )
   }
 }
 

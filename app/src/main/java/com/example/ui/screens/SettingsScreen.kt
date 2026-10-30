@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,6 +23,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -56,6 +58,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -65,11 +68,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -77,6 +82,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.example.data.remote.GeminiApiClient
 import com.example.ui.theme.AccentPresets
+import com.example.ui.theme.AccentRole
 import com.example.ui.theme.ThemeMode
 import com.example.ui.theme.ThemeSettingsStore
 import com.example.ui.viewmodel.ChatImportResult
@@ -228,17 +234,27 @@ private fun SettingsHubScreen(
 }
 
 /**
- * Appearance button (icon only). Opens a popup menu right under it with the theme choices on the
- * first row (تلقائي / فاتح / غامق / مظلم) and the accent colors below.
+ * Appearance button (icon only). Opens a popup menu right under it with:
+ *  1. the theme choices (تلقائي / فاتح / غامق / مظلم);
+ *  2. a switch for dynamic colors taken from the phone's wallpaper (Android 12+);
+ *  3. an accent color picker with a toggle to choose between the primary and the secondary accent.
+ *     Both share the same palette, and each keeps its own saved color. The picker is disabled while
+ *     dynamic colors are on, since they replace the whole color scheme.
  */
 @Composable
 private fun ThemeMenuButton() {
   val context = LocalContext.current
   var expanded by remember { mutableStateOf(false) }
+  var role by remember { mutableStateOf(AccentRole.PRIMARY) }
   val mode = ThemeSettingsStore.mode
-  val accentId = ThemeSettingsStore.accentId
+  val dynamicSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+  val dynamicOn = dynamicSupported && ThemeSettingsStore.dynamicColor
   // Show swatches in the tone the current theme actually uses.
   val isDarkNow = MaterialTheme.colorScheme.background.luminance() < 0.5f
+  val primaryPreset = AccentPresets.byId(ThemeSettingsStore.accentId, AccentRole.PRIMARY)
+  val secondaryPreset =
+    AccentPresets.byId(ThemeSettingsStore.secondaryAccentId, AccentRole.SECONDARY)
+  val selectedId = if (role == AccentRole.PRIMARY) primaryPreset.id else secondaryPreset.id
 
   Box {
     IconButton(
@@ -270,12 +286,65 @@ private fun ThemeMenuButton() {
             )
           }
         }
+
+        if (dynamicSupported) {
+          HorizontalDivider()
+          Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier =
+              Modifier.fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .toggleable(
+                  value = dynamicOn,
+                  role = Role.Switch,
+                  onValueChange = { ThemeSettingsStore.setDynamicColor(context, it) },
+                )
+                .padding(vertical = 4.dp)
+                .testTag("dynamic_color_toggle"),
+          ) {
+            Column(modifier = Modifier.weight(1f)) {
+              Text(text = "ألوان ديناميكية", style = MaterialTheme.typography.bodyMedium)
+              Text(
+                text = "مأخوذة من خلفية الهاتف",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+            Switch(checked = dynamicOn, onCheckedChange = null)
+          }
+        }
+
         HorizontalDivider()
         Text(
           text = "لون التمييز",
           style = MaterialTheme.typography.labelLarge,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        // Primary / secondary toggle; each button shows the color currently saved for its role.
+        Row(
+          modifier = Modifier.fillMaxWidth(),
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+          AccentRoleButton(
+            label = "الأساسي",
+            dotColor = primaryPreset.swatch(isDarkNow),
+            selected = role == AccentRole.PRIMARY,
+            enabled = !dynamicOn,
+            onClick = { role = AccentRole.PRIMARY },
+            tag = "accent_role_primary",
+            modifier = Modifier.weight(1f),
+          )
+          AccentRoleButton(
+            label = "الثانوي",
+            dotColor = secondaryPreset.swatch(isDarkNow),
+            selected = role == AccentRole.SECONDARY,
+            enabled = !dynamicOn,
+            onClick = { role = AccentRole.SECONDARY },
+            tag = "accent_role_secondary",
+            modifier = Modifier.weight(1f),
+          )
+        }
+        // One shared palette for both roles.
         AccentPresets.all.chunked(4).forEach { rowItems ->
           Row(
             modifier = Modifier.fillMaxWidth(),
@@ -283,11 +352,12 @@ private fun ThemeMenuButton() {
           ) {
             rowItems.forEach { preset ->
               val swatch = preset.swatch(isDarkNow)
-              val selected = preset.id == accentId
+              val selected = preset.id == selectedId
               Box(
                 contentAlignment = Alignment.Center,
                 modifier =
                   Modifier.size(40.dp)
+                    .alpha(if (dynamicOn) 0.35f else 1f)
                     .clip(CircleShape)
                     .background(swatch)
                     .then(
@@ -297,7 +367,9 @@ private fun ThemeMenuButton() {
                         Modifier
                       }
                     )
-                    .clickable { ThemeSettingsStore.setAccent(context, preset) }
+                    .clickable(enabled = !dynamicOn) {
+                      ThemeSettingsStore.setAccent(context, role, preset)
+                    }
                     .semantics { contentDescription = "لون ${preset.nameAr}" }
                     .testTag("accent_${preset.id}"),
               ) {
@@ -312,6 +384,13 @@ private fun ThemeMenuButton() {
               }
             }
           }
+        }
+        if (dynamicOn) {
+          Text(
+            text = "غير متاح أثناء تفعيل الألوان الديناميكية",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
         }
       }
     }
@@ -350,6 +429,47 @@ private fun ThemeModeButton(
       Icon(imageVector = icon, contentDescription = null, modifier = Modifier.size(22.dp))
       Spacer(modifier = Modifier.height(4.dp))
       Text(text = label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+    }
+  }
+}
+
+/** One of the two buttons that pick which accent (primary / secondary) the swatches change. */
+@Composable
+private fun AccentRoleButton(
+  label: String,
+  dotColor: Color,
+  selected: Boolean,
+  enabled: Boolean,
+  onClick: () -> Unit,
+  tag: String,
+  modifier: Modifier = Modifier,
+) {
+  Surface(
+    onClick = onClick,
+    enabled = enabled,
+    shape = RoundedCornerShape(14.dp),
+    color =
+      if (selected) MaterialTheme.colorScheme.primaryContainer
+      else MaterialTheme.colorScheme.surfaceVariant,
+    contentColor =
+      if (selected) MaterialTheme.colorScheme.onPrimaryContainer
+      else MaterialTheme.colorScheme.onSurfaceVariant,
+    modifier = modifier.alpha(if (enabled) 1f else 0.5f).testTag(tag),
+  ) {
+    Row(
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.Center,
+      modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp, horizontal = 8.dp),
+    ) {
+      Box(
+        modifier =
+          Modifier.size(14.dp)
+            .clip(CircleShape)
+            .background(dotColor)
+            .border(1.dp, MaterialTheme.colorScheme.outline, CircleShape),
+      )
+      Spacer(modifier = Modifier.width(8.dp))
+      Text(text = label, style = MaterialTheme.typography.labelLarge, maxLines = 1)
     }
   }
 }

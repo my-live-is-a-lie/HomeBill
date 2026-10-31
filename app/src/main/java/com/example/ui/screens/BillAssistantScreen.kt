@@ -469,7 +469,10 @@ fun BillAssistantScreen(
             }
           }
 
-          AnimatedVisibility(
+          // Fully qualified on purpose: inside this Box, the short name resolves to the
+          // ColumnScope overload of the enclosing Column, which Kotlin rejects here (the Box's
+          // BoxScope is a layout DSL marker). The fully qualified call picks the plain overload.
+          androidx.compose.animation.AnimatedVisibility(
             visible = showScrollToBottom,
             enter = fadeIn() + scaleIn(),
             exit = fadeOut() + scaleOut(),

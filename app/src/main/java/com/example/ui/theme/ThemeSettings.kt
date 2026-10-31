@@ -7,6 +7,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.toArgb
+import androidx.core.graphics.ColorUtils
+import kotlin.math.max
 
 /**
  * App theme choice.
@@ -140,7 +143,10 @@ object ThemeSettingsStore {
     context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 }
 
-/** Pure-black variant of the dark scheme: black background, near-black surfaces. */
+/**
+ * Pure-black variant of the dark scheme: black background and neutral near-black surfaces
+ * (including the container levels used by cards, menus and dialogs).
+ */
 internal fun ColorScheme.asPureBlack(): ColorScheme =
   copy(
     background = Color.Black,
@@ -148,7 +154,56 @@ internal fun ColorScheme.asPureBlack(): ColorScheme =
     surfaceVariant = Color(0xFF1A1A1A),
     outline = Color(0xFF3A3A3A),
     onSurfaceVariant = Color(0xFFB4B4B4),
+    surfaceDim = Color.Black,
+    surfaceBright = Color(0xFF2A2A2A),
+    surfaceContainerLowest = Color.Black,
+    surfaceContainerLow = Color(0xFF0F0F0F),
+    surfaceContainer = Color(0xFF141414),
+    surfaceContainerHigh = Color(0xFF1A1A1A),
+    surfaceContainerHighest = Color(0xFF222222),
   )
+
+/** Same lightness, but the hue of [hue] and at least [minSaturation] (HSL). */
+private fun Color.rehue(hue: Float, minSaturation: Float): Color {
+  val hsl = FloatArray(3)
+  ColorUtils.colorToHSL(toArgb(), hsl)
+  hsl[0] = hue
+  hsl[1] = max(hsl[1], minSaturation)
+  return Color(ColorUtils.HSLToColor(hsl))
+}
+
+/**
+ * Tints the neutral colors (background, surfaces, containers, outlines and their text colors) with
+ * the hue of the primary [accent], so choosing e.g. purple gives purple-tinted backgrounds and cards
+ * instead of the original green-tinted ones. Lightness is kept, so contrast does not change.
+ * The default accent returns the scheme untouched, keeping the original colors exact.
+ */
+internal fun ColorScheme.withAccentSurfaces(accent: AccentPreset, dark: Boolean): ColorScheme {
+  if (accent.id == AccentRole.PRIMARY.defaultId) return this
+  val hsl = FloatArray(3)
+  ColorUtils.colorToHSL(accent.swatch(dark).toArgb(), hsl)
+  val hue = hsl[0]
+  // Dark surfaces are so dark that the original saturation is barely visible; raise it a little.
+  val minSaturation = if (dark) 0.22f else 0f
+  val tint: (Color) -> Color = { it.rehue(hue, minSaturation) }
+  return copy(
+    background = tint(background),
+    onBackground = tint(onBackground),
+    surface = tint(surface),
+    onSurface = tint(onSurface),
+    surfaceVariant = tint(surfaceVariant),
+    onSurfaceVariant = tint(onSurfaceVariant),
+    outline = tint(outline),
+    outlineVariant = tint(outlineVariant),
+    surfaceDim = tint(surfaceDim),
+    surfaceBright = tint(surfaceBright),
+    surfaceContainerLowest = tint(surfaceContainerLowest),
+    surfaceContainerLow = tint(surfaceContainerLow),
+    surfaceContainer = tint(surfaceContainer),
+    surfaceContainerHigh = tint(surfaceContainerHigh),
+    surfaceContainerHighest = tint(surfaceContainerHighest),
+  )
+}
 
 /**
  * Replaces the [role] color family (primary or secondary) with [accent]. When [accent] is the

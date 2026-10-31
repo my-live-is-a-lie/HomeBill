@@ -85,8 +85,9 @@ val AppShapes =
  * [ThemeMode.SYSTEM] (the default). An explicit light/dark/black choice, the primary and secondary
  * accents, and the dynamic-color switch all come from [ThemeSettingsStore].
  *
- * With dynamic color on (Android 12+) the whole scheme is taken from the phone's wallpaper and the
- * accent choices are ignored.
+ * The primary accent also tints the background and surfaces (not in pure black mode). With dynamic
+ * color on (Android 12+) the whole scheme is taken from the phone's wallpaper and the accent
+ * choices are ignored.
  */
 @Composable
 fun MyApplicationTheme(
@@ -123,7 +124,11 @@ fun MyApplicationTheme(
     if (useDynamic) {
       modeScheme
     } else {
-      modeScheme
+      // Pure black stays neutral; every other mode picks up the primary accent's tint.
+      val surfacesTinted =
+        if (mode == ThemeMode.BLACK) modeScheme
+        else modeScheme.withAccentSurfaces(primaryAccent, useDark)
+      surfacesTinted
         .withAccent(primaryAccent, AccentRole.PRIMARY, useDark)
         .withAccent(secondaryAccent, AccentRole.SECONDARY, useDark)
     }

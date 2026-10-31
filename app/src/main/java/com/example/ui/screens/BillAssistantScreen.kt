@@ -3,11 +3,19 @@ package com.example.ui.screens
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +47,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.ContentCopy
@@ -86,6 +95,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -98,10 +108,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
@@ -185,6 +199,29 @@ fun BillAssistantScreen(
       listState.animateScrollToItem(totalItems - 1)
     }
   }
+
+  // The quick-prompt bar at the top collapses while the user scrolls down through the chat
+  // (finger moving up) and comes back when they scroll up (finger moving down).
+  var quickBarVisible by remember { mutableStateOf(true) }
+  val quickBarScrollConnection =
+    remember(listState) {
+      object : NestedScrollConnection {
+        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+          if (available.y < -4f && listState.canScrollForward) {
+            quickBarVisible = false
+          } else if (available.y > 4f) {
+            quickBarVisible = true
+          }
+          return Offset.Zero
+        }
+      }
+    }
+  // A fresh or different conversation starts with the bar visible.
+  LaunchedEffect(activeConversation?.id) { quickBarVisible = true }
+
+  // The "jump to latest" arrow is shown whenever there is more chat below the visible part.
+  val canScrollForward by remember { derivedStateOf { listState.canScrollForward } }
+  val showScrollToBottom = messages.isNotEmpty() && canScrollForward
 
   val quickActions =
     listOf(
@@ -325,76 +362,103 @@ fun BillAssistantScreen(
           .imePadding(),
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-      // Quick Prompt Toolbar
-      LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
+      // Quick Prompt Toolbar (collapses while scrolling down through the chat)
+      AnimatedVisibility(
+        visible = quickBarVisible,
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut(),
       ) {
-        items(quickActions) { (icon, label, fullPrompt) ->
-          AssistChip(
-            onClick = { if (!isTyping) onSendMessage(fullPrompt) },
-            enabled = !isTyping,
-            leadingIcon = {
-              Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-              )
-            },
-            label = { Text(label) },
-          )
+        LazyRow(
+          contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
+        ) {
+          items(quickActions) { (icon, label, fullPrompt) ->
+            AssistChip(
+              onClick = { if (!isTyping) onSendMessage(fullPrompt) },
+              enabled = !isTyping,
+              leadingIcon = {
+                Icon(
+                  imageVector = icon,
+                  contentDescription = null,
+                  modifier = Modifier.size(16.dp),
+                )
+              },
+              label = { Text(label) },
+            )
+          }
         }
       }
 
-      // Conversation Messages List
-      LazyColumn(
-        state = listState,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-        modifier =
-          Modifier.weight(1f)
-            .widthIn(max = 760.dp)
-            .fillMaxWidth()
-            .testTag("assistant_messages_list"),
-      ) {
-        itemsIndexed(messages, key = { _, msg -> msg.id }) { index, msg ->
-          val isLatestAssistant = !msg.isUser && index == messages.lastIndex && !isTyping
-          if (msg.isUser) {
-            UserChatBubble(
-              text = msg.text,
-              imagePath = msg.imagePath,
-              timestampMillis = msg.timestampMillis,
-              onCopyClick = {
-                clipboardManager.setText(AnnotatedString(msg.text))
-                Toast.makeText(context, copiedToastText, Toast.LENGTH_SHORT).show()
-              },
-            )
-          } else {
-            AssistantChatCard(
-              message = msg,
-              primaryCurrency = analyticsSummary.primaryCurrency,
-              showSuggestions = isLatestAssistant,
-              onSuggestionClick = { suggestion ->
-                if (!isTyping) onSendMessage(suggestion)
-              },
-              onRetryClick = {
-                if (!isTyping) onRetryLastMessage()
-              },
-              onCopyClick = {
-                clipboardManager.setText(AnnotatedString(msg.text))
-                Toast.makeText(context, copiedToastText, Toast.LENGTH_SHORT).show()
-              },
-              onOpenSettings = onOpenSettings,
-              timestampMillis = msg.timestampMillis,
-            )
+      // Conversation Messages List, with the "jump to latest" arrow floating over its bottom edge
+      Box(modifier = Modifier.weight(1f).widthIn(max = 760.dp).fillMaxWidth()) {
+        LazyColumn(
+          state = listState,
+          contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+          verticalArrangement = Arrangement.spacedBy(14.dp),
+          modifier =
+            Modifier.fillMaxSize()
+              .nestedScroll(quickBarScrollConnection)
+              .testTag("assistant_messages_list"),
+        ) {
+          itemsIndexed(messages, key = { _, msg -> msg.id }) { index, msg ->
+            val isLatestAssistant = !msg.isUser && index == messages.lastIndex && !isTyping
+            if (msg.isUser) {
+              UserChatBubble(
+                text = msg.text,
+                imagePath = msg.imagePath,
+                timestampMillis = msg.timestampMillis,
+                onCopyClick = {
+                  clipboardManager.setText(AnnotatedString(msg.text))
+                  Toast.makeText(context, copiedToastText, Toast.LENGTH_SHORT).show()
+                },
+              )
+            } else {
+              AssistantChatCard(
+                message = msg,
+                primaryCurrency = analyticsSummary.primaryCurrency,
+                showSuggestions = isLatestAssistant,
+                onSuggestionClick = { suggestion ->
+                  if (!isTyping) onSendMessage(suggestion)
+                },
+                onRetryClick = {
+                  if (!isTyping) onRetryLastMessage()
+                },
+                onCopyClick = {
+                  clipboardManager.setText(AnnotatedString(msg.text))
+                  Toast.makeText(context, copiedToastText, Toast.LENGTH_SHORT).show()
+                },
+                onOpenSettings = onOpenSettings,
+                timestampMillis = msg.timestampMillis,
+              )
+            }
+          }
+
+          if (isTyping) {
+            item(key = "typing_indicator") {
+              TypingIndicatorCard()
+            }
           }
         }
 
-        if (isTyping) {
-          item(key = "typing_indicator") {
-            TypingIndicatorCard()
-          }
+        AnimatedVisibility(
+          visible = showScrollToBottom,
+          enter = fadeIn() + scaleIn(),
+          exit = fadeOut() + scaleOut(),
+          modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 8.dp),
+        ) {
+          ScrollToBottomButton(
+            onClick = {
+              scope.launch {
+                val totalItems = messages.size + if (isTyping) 1 else 0
+                if (totalItems > 0) {
+                  listState.animateScrollToItem(totalItems - 1)
+                  // A long last message can extend below the screen; continue to its end.
+                  if (listState.canScrollForward) listState.animateScrollBy(100_000f)
+                }
+              }
+            },
+          )
         }
       }
 
@@ -500,6 +564,28 @@ fun BillAssistantScreen(
     }
   }
 
+  }
+}
+
+/** Small round arrow that jumps to the latest message; shown when there is more chat below. */
+@Composable
+private fun ScrollToBottomButton(onClick: () -> Unit) {
+  Surface(
+    onClick = onClick,
+    shape = CircleShape,
+    color = MaterialTheme.colorScheme.surfaceVariant,
+    contentColor = MaterialTheme.colorScheme.onSurface,
+    tonalElevation = 3.dp,
+    shadowElevation = 6.dp,
+    modifier = Modifier.size(40.dp).testTag("scroll_to_bottom_button"),
+  ) {
+    Box(contentAlignment = Alignment.Center) {
+      Icon(
+        imageVector = Icons.Default.ArrowDownward,
+        contentDescription = "النزول إلى آخر الدردشة",
+        modifier = Modifier.size(22.dp),
+      )
+    }
   }
 }
 

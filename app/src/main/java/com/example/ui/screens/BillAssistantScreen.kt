@@ -44,10 +44,8 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -105,6 +103,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalClipboardManager
 import kotlinx.coroutines.launch
@@ -114,10 +113,12 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.model.BillCategory
+import com.example.ui.components.AssistantIcons
 import com.example.ui.components.FullscreenImageViewer
 import com.example.ui.viewmodel.ChatConversation
 import com.example.ui.viewmodel.ChatImportResult
@@ -252,7 +253,7 @@ fun BillAssistantScreen(
               modifier = Modifier.testTag("chat_drawer_button"),
             ) {
               Icon(
-                imageVector = Icons.Default.Menu,
+                imageVector = AssistantIcons.Sidebar,
                 contentDescription = "القائمة وسجل المحادثات",
               )
             }
@@ -303,11 +304,25 @@ fun BillAssistantScreen(
           }
         },
         actions = {
-          IconButton(
-            onClick = onTemporaryChat,
-            modifier = Modifier.testTag("temporary_chat_button"),
-          ) {
-            TempChatIcon()
+          if (isTemporaryChat) {
+            // Inside a temporary chat the button becomes an X that leaves it (and discards it),
+            // exactly like the Gemini app.
+            IconButton(
+              onClick = onCreateConversation,
+              modifier = Modifier.testTag("exit_temporary_chat_button"),
+            ) {
+              Icon(
+                imageVector = Icons.Default.Close,
+                contentDescription = "إغلاق الدردشة المؤقتة",
+              )
+            }
+          } else {
+            IconButton(
+              onClick = onTemporaryChat,
+              modifier = Modifier.testTag("temporary_chat_button"),
+            ) {
+              TempChatIcon()
+            }
           }
         },
         colors =
@@ -325,75 +340,89 @@ fun BillAssistantScreen(
           .imePadding(),
       horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-      // Quick Prompt Toolbar
-      LazyRow(
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
-      ) {
-        items(quickActions) { (icon, label, fullPrompt) ->
-          AssistChip(
-            onClick = { if (!isTyping) onSendMessage(fullPrompt) },
-            enabled = !isTyping,
-            leadingIcon = {
-              Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp),
-              )
-            },
-            label = { Text(label) },
-          )
-        }
-      }
+      // A fresh temporary chat shows the "محادثة عابرة؟" page (like Gemini) instead of the
+      // welcome card and quick prompts. It switches to the normal list on the first message.
+      val showTemporaryIntro = isTemporaryChat && !isTyping && messages.none { it.isUser }
 
-      // Conversation Messages List
-      LazyColumn(
-        state = listState,
-        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-        modifier =
-          Modifier.weight(1f)
-            .widthIn(max = 760.dp)
-            .fillMaxWidth()
-            .testTag("assistant_messages_list"),
-      ) {
-        itemsIndexed(messages, key = { _, msg -> msg.id }) { index, msg ->
-          val isLatestAssistant = !msg.isUser && index == messages.lastIndex && !isTyping
-          if (msg.isUser) {
-            UserChatBubble(
-              text = msg.text,
-              imagePath = msg.imagePath,
-              timestampMillis = msg.timestampMillis,
-              onCopyClick = {
-                clipboardManager.setText(AnnotatedString(msg.text))
-                Toast.makeText(context, copiedToastText, Toast.LENGTH_SHORT).show()
+      if (showTemporaryIntro) {
+        TemporaryChatIntro(
+          modifier =
+            Modifier.weight(1f)
+              .widthIn(max = 760.dp)
+              .fillMaxWidth()
+              .testTag("temporary_chat_intro"),
+        )
+      } else {
+        // Quick Prompt Toolbar
+        LazyRow(
+          contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp),
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth(),
+        ) {
+          items(quickActions) { (icon, label, fullPrompt) ->
+            AssistChip(
+              onClick = { if (!isTyping) onSendMessage(fullPrompt) },
+              enabled = !isTyping,
+              leadingIcon = {
+                Icon(
+                  imageVector = icon,
+                  contentDescription = null,
+                  modifier = Modifier.size(16.dp),
+                )
               },
-            )
-          } else {
-            AssistantChatCard(
-              message = msg,
-              primaryCurrency = analyticsSummary.primaryCurrency,
-              showSuggestions = isLatestAssistant,
-              onSuggestionClick = { suggestion ->
-                if (!isTyping) onSendMessage(suggestion)
-              },
-              onRetryClick = {
-                if (!isTyping) onRetryLastMessage()
-              },
-              onCopyClick = {
-                clipboardManager.setText(AnnotatedString(msg.text))
-                Toast.makeText(context, copiedToastText, Toast.LENGTH_SHORT).show()
-              },
-              onOpenSettings = onOpenSettings,
-              timestampMillis = msg.timestampMillis,
+              label = { Text(label) },
             )
           }
         }
 
-        if (isTyping) {
-          item(key = "typing_indicator") {
-            TypingIndicatorCard()
+        // Conversation Messages List
+        LazyColumn(
+          state = listState,
+          contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+          verticalArrangement = Arrangement.spacedBy(14.dp),
+          modifier =
+            Modifier.weight(1f)
+              .widthIn(max = 760.dp)
+              .fillMaxWidth()
+              .testTag("assistant_messages_list"),
+        ) {
+          itemsIndexed(messages, key = { _, msg -> msg.id }) { index, msg ->
+            val isLatestAssistant = !msg.isUser && index == messages.lastIndex && !isTyping
+            if (msg.isUser) {
+              UserChatBubble(
+                text = msg.text,
+                imagePath = msg.imagePath,
+                timestampMillis = msg.timestampMillis,
+                onCopyClick = {
+                  clipboardManager.setText(AnnotatedString(msg.text))
+                  Toast.makeText(context, copiedToastText, Toast.LENGTH_SHORT).show()
+                },
+              )
+            } else {
+              AssistantChatCard(
+                message = msg,
+                primaryCurrency = analyticsSummary.primaryCurrency,
+                showSuggestions = isLatestAssistant,
+                onSuggestionClick = { suggestion ->
+                  if (!isTyping) onSendMessage(suggestion)
+                },
+                onRetryClick = {
+                  if (!isTyping) onRetryLastMessage()
+                },
+                onCopyClick = {
+                  clipboardManager.setText(AnnotatedString(msg.text))
+                  Toast.makeText(context, copiedToastText, Toast.LENGTH_SHORT).show()
+                },
+                onOpenSettings = onOpenSettings,
+                timestampMillis = msg.timestampMillis,
+              )
+            }
+          }
+
+          if (isTyping) {
+            item(key = "typing_indicator") {
+              TypingIndicatorCard()
+            }
           }
         }
       }
@@ -500,6 +529,35 @@ fun BillAssistantScreen(
     }
   }
 
+  }
+}
+
+/**
+ * The page shown when a temporary chat has just been opened, like the "محادثة عابرة؟" page in
+ * Gemini: the dashed-circle pencil, a large title and a short explanation, centered on screen.
+ */
+@Composable
+private fun TemporaryChatIntro(modifier: Modifier = Modifier) {
+  Column(
+    modifier = modifier.padding(horizontal = 32.dp),
+    horizontalAlignment = Alignment.CenterHorizontally,
+    verticalArrangement = Arrangement.Center,
+  ) {
+    TempChatIcon(size = 40.dp)
+    Spacer(modifier = Modifier.height(20.dp))
+    Text(
+      text = "محادثة عابرة؟",
+      style = MaterialTheme.typography.headlineMedium,
+      color = MaterialTheme.colorScheme.onSurface,
+      textAlign = TextAlign.Center,
+    )
+    Spacer(modifier = Modifier.height(16.dp))
+    Text(
+      text = "لا تظهر المحادثات المؤقتة في سجل المحادثات، ولا تُحفظ على جهازك، وتُحذف بمجرد مغادرتها.",
+      style = MaterialTheme.typography.bodyLarge,
+      color = MaterialTheme.colorScheme.onSurfaceVariant,
+      textAlign = TextAlign.Center,
+    )
   }
 }
 
@@ -633,19 +691,21 @@ private fun formatRelativeTime(timestampMillis: Long): String {
 /**
  * Gemini's temporary-chat mark: a pencil inside a dashed circle, as in the
  * Gemini app's top bar. The top-bar button now opens a temporary chat.
+ * [size] scales the whole mark (24.dp in the top bar, larger on the temporary chat page).
  */
 @Composable
-private fun TempChatIcon() {
+private fun TempChatIcon(size: Dp = 24.dp) {
   val circleColor = MaterialTheme.colorScheme.onSurface
+  val scale = size.value / 24f
   Box(
     modifier =
-      Modifier.size(24.dp).drawBehind {
+      Modifier.size(size).drawBehind {
         drawCircle(
           color = circleColor,
           style =
             Stroke(
-              width = 1.5.dp.toPx(),
-              pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 4f), 0f),
+              width = 1.5.dp.toPx() * scale,
+              pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f * scale, 4f * scale), 0f),
             ),
         )
       },
@@ -654,7 +714,7 @@ private fun TempChatIcon() {
     Icon(
       imageVector = Icons.Default.Edit,
       contentDescription = "دردشة مؤقتة",
-      modifier = Modifier.size(15.dp),
+      modifier = Modifier.size(size * 0.625f),
     )
   }
 }
@@ -945,7 +1005,7 @@ private fun AssistantHistoryDrawer(
       Box {
         IconButton(onClick = { showSortMenu = true }) {
           Icon(
-            imageVector = Icons.Default.FilterList,
+            imageVector = AssistantIcons.Filter,
             contentDescription = "فرز المحادثات",
             tint = MaterialTheme.colorScheme.onSurfaceVariant,
           )

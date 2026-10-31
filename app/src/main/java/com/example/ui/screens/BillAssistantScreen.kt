@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -55,6 +59,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -194,6 +199,45 @@ fun BillAssistantScreen(
   val scope = rememberCoroutineScope()
   var showModelMenu by remember { mutableStateOf(false) }
   var thinkingExpanded by remember { mutableStateOf(false) }
+
+  // Voice input: opens the system speech-recognition screen and puts what the user said into the
+  // input box (appended after any text already there), so it can be edited before sending.
+  // The system screen handles the microphone itself, so the app needs no extra permission.
+  val voiceInputLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+      if (result.resultCode == Activity.RESULT_OK) {
+        val spoken =
+          result.data
+            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+            ?.trim()
+            .orEmpty()
+        if (spoken.isNotEmpty()) {
+          val current = inputValue.text
+          val merged = if (current.isBlank()) spoken else current.trimEnd() + " " + spoken
+          inputValue = TextFieldValue(text = merged, selection = TextRange(merged.length))
+          inputFocusRequester.requestFocus()
+        }
+      }
+    }
+  val startVoiceInput: () -> Unit = {
+    val intent =
+      Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(
+          RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+          RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+        )
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar")
+        putExtra(RecognizerIntent.EXTRA_PROMPT, "تحدّث الآن")
+      }
+    try {
+      voiceInputLauncher.launch(intent)
+    } catch (e: ActivityNotFoundException) {
+      Toast.makeText(context, "التعرف على الكلام غير متاح على هذا الجهاز", Toast.LENGTH_SHORT)
+        .show()
+    }
+  }
+
   LaunchedEffect(messages.size, isTyping) {
     val totalItems = messages.size + if (isTyping) 1 else 0
     if (totalItems > 0) {
@@ -565,7 +609,22 @@ fun BillAssistantScreen(
                   .testTag("chat_input_field"),
             )
 
-            Spacer(modifier = Modifier.width(8.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+
+            // Microphone: speech-to-text into the input box (like the mic in Gemini's composer).
+            IconButton(
+              onClick = startVoiceInput,
+              enabled = !isTyping,
+              modifier = Modifier.size(44.dp).testTag("chat_voice_button"),
+            ) {
+              Icon(
+                imageVector = Icons.Default.Mic,
+                contentDescription = "إدخال صوتي",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+              )
+            }
+
+            Spacer(modifier = Modifier.width(4.dp))
 
             // Dim while there is nothing to send; filled with the accent color once the user
             // has typed something, so it is clear the button is usable.

@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import android.Manifest
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
@@ -20,11 +21,47 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.LifecycleOwner
 
 /** True when the user has already allowed the app to use the microphone. */
 fun hasMicrophonePermission(context: Context): Boolean =
   ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
     PackageManager.PERMISSION_GRANTED
+
+/**
+ * Common face of the two voice-dictation engines (the Gemini live one and the built-in Android
+ * one), so the screen can show the same recording bar for whichever is running.
+ */
+interface Dictation {
+  /** True from [start] until listening has fully ended. */
+  val isListening: Boolean
+
+  /** Loudness of the voice, 0f..1f. */
+  val level: Float
+
+  /** Recent loudness values (oldest first) used to draw the waveform. */
+  val levels: List<Float>
+
+  /**
+   * Starts listening. `onUpdate` receives the full text (what was there before + everything said
+   * so far) every time it changes, `onFinished` receives the final text once listening ends, and
+   * `onError` a short Arabic message. Returns false if this engine cannot start on this device.
+   */
+  fun start(
+    baseText: String,
+    onUpdate: (String) -> Unit,
+    onFinished: (String) -> Unit,
+    onError: (String) -> Unit,
+  ): Boolean
+
+  /** Ends listening and keeps what was said (delivered through `onFinished`). */
+  fun stop()
+
+  /** Ends listening immediately, without calling any callback. */
+  fun cancel()
+}
 
 private fun joinText(a: String, b: String): String =
   when {
@@ -34,29 +71,29 @@ private fun joinText(a: String, b: String): String =
   }
 
 /**
- * Live voice dictation inside the app (no system dialog).
+ * Dictation with the speech recognizer built into Android (no Gemini key needed).
  *
  * - [start] begins listening; every partial result is sent to the `onUpdate` callback as the full
  *   text (the text that was there before + everything said so far), so the input box fills in
- *   word by word while the user speaks.
+ *   while the user speaks.
  * - Dictation keeps going across pauses: when the recognizer finishes a sentence the text is kept
- *   and listening restarts, until the user calls [stop] (second tap on the mic) or about three
- *   silent rounds in a row pass.
- * - [stop] ends listening and keeps what was said; [cancel] ends it silently without callbacks.
+ *   and listening restarts, until the user calls [stop] or about three silent rounds in a row
+ *   pass.
  *
  * All calls must be made on the main thread.
  */
 @Stable
-class VoiceDictation internal constructor(context: Context) {
+class VoiceDictation internal constructor(context: Context) : Dictation {
   private val appContext = context.applicationContext
   private val handler = Handler(Looper.getMainLooper())
 
-  /** True from [start] until listening has fully ended. */
-  var isListening by mutableStateOf(false)
+  override var isListening: Boolean by mutableStateOf(false)
     private set
 
-  /** Loudness of the voice, 0f..1f; drives the pulsing mic animation. */
-  var level by mutableFloatStateOf(0f)
+  override var level: Float by mutableFloatStateOf(0f)
+    private set
+
+  override var levels: List<Float> by mutableStateOf(emptyList())
     private set
 
   private var recognizer: SpeechRecognizer? = null
@@ -77,11 +114,7 @@ class VoiceDictation internal constructor(context: Context) {
       if (isListening && !userStopped) beginRecognition()
     }
 
-  /**
-   * Starts listening. Returns false when this device has no speech-recognition service, so the
-   * caller can fall back to something else.
-   */
-  fun start(
+  override fun start(
     baseText: String,
     onUpdate: (String) -> Unit,
     onFinished: (String) -> Unit,
@@ -97,13 +130,13 @@ class VoiceDictation internal constructor(context: Context) {
     userStopped = false
     emptyRounds = 0
     restartPending = false
+    levels = emptyList()
     isListening = true
     beginRecognition()
     return true
   }
 
-  /** Ends listening and keeps what was said (delivered through `onFinished`). */
-  fun stop() {
+  override fun stop() {
     if (!isListening) return
     userStopped = true
     handler.removeCallbacks(restartRunnable)
@@ -119,14 +152,14 @@ class VoiceDictation internal constructor(context: Context) {
     handler.postDelayed(stopSafety, 1500)
   }
 
-  /** Ends listening immediately, without calling any callback. */
-  fun cancel() {
+  override fun cancel() {
     if (!isListening) return
     userStopped = true
     restartPending = false
     handler.removeCallbacksAndMessages(null)
     isListening = false
     level = 0f
+    levels = emptyList()
     destroyRecognizer()
   }
 
@@ -192,6 +225,7 @@ class VoiceDictation internal constructor(context: Context) {
     restartPending = false
     isListening = false
     level = 0f
+    levels = emptyList()
     destroyRecognizer()
     finishedCallback(displayed)
   }
@@ -211,6 +245,7 @@ class VoiceDictation internal constructor(context: Context) {
       override fun onRmsChanged(rmsdB: Float) {
         val target = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
         level = level * 0.6f + target * 0.4f
+        levels = (levels + level).takeLast(64)
       }
 
       override fun onBufferReceived(buffer: ByteArray?) {}
@@ -281,11 +316,38 @@ class VoiceDictation internal constructor(context: Context) {
     }
 }
 
-/** Creates the [VoiceDictation] for this screen and releases the microphone when it leaves. */
+/** Creates the built-in [VoiceDictation] for this screen and releases the microphone when it leaves. */
 @Composable
 fun rememberVoiceDictation(): VoiceDictation {
   val context = LocalContext.current
   val dictation = remember { VoiceDictation(context) }
   DisposableEffect(dictation) { onDispose { dictation.release() } }
+  StopDictationInBackground(dictation)
   return dictation
+}
+
+/**
+ * Ends the dictation (keeping what was said) when the app leaves the screen: Android cuts the
+ * microphone off from apps in the background, so recording would only produce silence.
+ */
+@Composable
+internal fun StopDictationInBackground(dictation: Dictation) {
+  val context = LocalContext.current
+  DisposableEffect(dictation, context) {
+    val owner = context.findLifecycleOwner()
+    val observer = LifecycleEventObserver { _, event ->
+      if (event == Lifecycle.Event.ON_STOP) dictation.stop()
+    }
+    owner?.lifecycle?.addObserver(observer)
+    onDispose { owner?.lifecycle?.removeObserver(observer) }
+  }
+}
+
+private fun Context.findLifecycleOwner(): LifecycleOwner? {
+  var current: Context? = this
+  while (current is ContextWrapper) {
+    if (current is LifecycleOwner) return current
+    current = current.baseContext
+  }
+  return null
 }

@@ -1,5 +1,10 @@
 package com.example.ui.screens
 
+import android.Manifest
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.speech.RecognizerIntent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -11,6 +16,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -55,6 +61,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -106,7 +113,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
@@ -122,6 +131,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.platform.LocalClipboardManager
 import kotlinx.coroutines.launch
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
@@ -132,8 +142,13 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.model.BillCategory
+import com.example.data.remote.UserGeminiKeyStore
 import com.example.ui.components.AssistantIcons
+import com.example.ui.components.Dictation
 import com.example.ui.components.FullscreenImageViewer
+import com.example.ui.components.hasMicrophonePermission
+import com.example.ui.components.rememberGeminiLiveDictation
+import com.example.ui.components.rememberVoiceDictation
 import com.example.ui.viewmodel.ChatConversation
 import com.example.ui.viewmodel.ChatImportResult
 import com.example.data.model.BillRecord
@@ -156,6 +171,9 @@ private val imageQuickQuestions =
     "اشرح لي بنود هذه الفاتورة بلغة بسيطة",
     "هل في الفاتورة أي شيء غير واضح أو يحتاج إلى تدقيق؟",
   )
+
+/** What the input box held before a voice dictation and right after it, to offer "delete dictated text". */
+private data class DictationUndo(val before: String, val after: String)
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
@@ -189,11 +207,121 @@ fun BillAssistantScreen(
   val listState = rememberLazyListState()
   val clipboardManager = LocalClipboardManager.current
   val context = LocalContext.current
+  val focusManager = LocalFocusManager.current
   val copiedToastText = stringResource(R.string.assistant_copied_toast)
   val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
   val scope = rememberCoroutineScope()
   var showModelMenu by remember { mutableStateOf(false) }
   var thinkingExpanded by remember { mutableStateOf(false) }
+
+  // Voice dictation inside the app: tap the mic and the words appear in the input box as you speak,
+  // with a waveform bar (✕ cancels and discards, ✓ keeps the text). With a Gemini key the live
+  // Gemini transcription is used (continuous recording, no dropped words); without one, the speech
+  // recognizer built into Android. Afterwards a chip lets the user delete the dictated text.
+  val liveVoice = rememberGeminiLiveDictation()
+  val builtinVoice = rememberVoiceDictation()
+  // Whichever of the two is recording right now (the built-in one when neither is).
+  val voice: Dictation = if (liveVoice.isListening) liveVoice else builtinVoice
+  var dictationBefore by remember { mutableStateOf("") }
+  var dictationUndo by remember { mutableStateOf<DictationUndo?>(null) }
+
+  // Last resort for devices with no in-app speech service: the system speech screen, which puts
+  // the recognized text into the input box once it closes.
+  val voiceInputLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+      if (result.resultCode == Activity.RESULT_OK) {
+        val spoken =
+          result.data
+            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+            ?.trim()
+            .orEmpty()
+        if (spoken.isNotEmpty()) {
+          val current = inputValue.text
+          val merged = if (current.isBlank()) spoken else current.trimEnd() + " " + spoken
+          inputValue = TextFieldValue(text = merged, selection = TextRange(merged.length))
+          inputFocusRequester.requestFocus()
+        }
+      }
+    }
+  val startSystemVoiceInput: () -> Unit = {
+    val intent =
+      Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+        putExtra(
+          RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+          RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+        )
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ar")
+        putExtra(RecognizerIntent.EXTRA_PROMPT, "تحدّث الآن")
+      }
+    try {
+      voiceInputLauncher.launch(intent)
+    } catch (e: ActivityNotFoundException) {
+      Toast.makeText(context, "التعرف على الكلام غير متاح على هذا الجهاز", Toast.LENGTH_SHORT)
+        .show()
+    }
+  }
+
+  val beginDictation: () -> Unit = {
+    val before = inputValue.text
+    dictationBefore = before
+    val onUpdate: (String) -> Unit = { text ->
+      inputValue = TextFieldValue(text = text, selection = TextRange(text.length))
+    }
+    val onFinished: (String) -> Unit = { text ->
+      dictationUndo =
+        if (text.trim() != before.trim()) DictationUndo(before = before, after = text) else null
+    }
+    val onError: (String) -> Unit = { message ->
+      Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+    }
+    var started = false
+    if (UserGeminiKeyStore.hasKey(context)) {
+      started = liveVoice.start(before, onUpdate, onFinished, onError)
+    }
+    if (!started) started = builtinVoice.start(before, onUpdate, onFinished, onError)
+    if (started) {
+      dictationUndo = null
+      focusManager.clearFocus() // hides the keyboard while listening
+    } else {
+      startSystemVoiceInput()
+    }
+  }
+  val micPermissionLauncher =
+    rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+      if (granted) {
+        beginDictation()
+      } else {
+        Toast.makeText(
+            context,
+            "يلزم السماح باستخدام الميكروفون للإدخال الصوتي",
+            Toast.LENGTH_SHORT,
+          )
+          .show()
+      }
+    }
+  val onMicClick: () -> Unit = {
+    when {
+      voice.isListening -> voice.stop()
+      hasMicrophonePermission(context) -> beginDictation()
+      else -> micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+    }
+  }
+  // ✕ in the recording bar: stop listening and discard what was dictated.
+  val cancelDictation: () -> Unit = {
+    liveVoice.cancel()
+    builtinVoice.cancel()
+    inputValue =
+      TextFieldValue(text = dictationBefore, selection = TextRange(dictationBefore.length))
+    dictationUndo = null
+  }
+  // Switching to another conversation ends any dictation in progress.
+  LaunchedEffect(activeConversation?.id) {
+    liveVoice.cancel()
+    builtinVoice.cancel()
+    dictationUndo = null
+  }
+
   LaunchedEffect(messages.size, isTyping) {
     val totalItems = messages.size + if (isTyping) 1 else 0
     if (totalItems > 0) {
@@ -507,11 +635,26 @@ fun BillAssistantScreen(
         )
       }
 
+      // After a dictation ends: one tap removes only the dictated text (restores what was there
+      // before). It disappears as soon as the user edits the text or sends the message.
+      val undo = dictationUndo
+      if (undo != null && !voice.isListening) {
+        DictationUndoChip(
+          onClick = {
+            inputValue = TextFieldValue(text = undo.before, selection = TextRange(undo.before.length))
+            dictationUndo = null
+          },
+        )
+      }
+
       // Composer Bar: a floating capsule (pill) like other AI chat apps.
       val canSend = inputText.isNotBlank() && !isTyping
       val submitInput: () -> Unit = {
         val prompt = inputText.trim()
         if (prompt.isNotEmpty() && !isTyping) {
+          liveVoice.cancel()
+          builtinVoice.cancel()
+          dictationUndo = null
           inputValue = TextFieldValue("")
           onSendMessage(prompt)
         }
@@ -529,65 +672,100 @@ fun BillAssistantScreen(
           shadowElevation = 2.dp,
           modifier = Modifier.fillMaxWidth(),
         ) {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(start = 20.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-          ) {
-            BasicTextField(
-              value = inputValue,
-              onValueChange = { inputValue = it },
-              maxLines = 5,
-              textStyle =
-                MaterialTheme.typography.bodyLarge.copy(
-                  color = MaterialTheme.colorScheme.onSurface
-                ),
-              cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-              keyboardActions = KeyboardActions(onSend = { submitInput() }),
-              decorationBox = { innerTextField ->
-                Box(
-                  contentAlignment = Alignment.CenterStart,
-                  modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
-                ) {
-                  if (inputText.isEmpty()) {
-                    Text(
-                      text = stringResource(R.string.assistant_input_hint),
-                      style = MaterialTheme.typography.bodyLarge,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                  }
-                  innerTextField()
-                }
-              },
-              modifier =
-                Modifier.weight(1f)
-                  .focusRequester(inputFocusRequester)
-                  .testTag("chat_input_field"),
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            // Dim while there is nothing to send; filled with the accent color once the user
-            // has typed something, so it is clear the button is usable.
-            // ArrowForward is auto-mirrored: it points left in the RTL (Arabic) layout.
-            FilledIconButton(
-              onClick = submitInput,
-              enabled = canSend,
-              colors =
-                IconButtonDefaults.filledIconButtonColors(
-                  containerColor = MaterialTheme.colorScheme.primary,
-                  contentColor = MaterialTheme.colorScheme.onPrimary,
-                  disabledContainerColor =
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-                  disabledContentColor =
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                ),
-              modifier = Modifier.size(44.dp).testTag("chat_send_button"),
+          Column(modifier = Modifier.padding(top = 6.dp, bottom = 6.dp)) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              modifier = Modifier.padding(start = 20.dp, end = 6.dp),
             ) {
-              Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = stringResource(R.string.assistant_send_desc),
-                modifier = Modifier.size(24.dp),
+              BasicTextField(
+                value = inputValue,
+                onValueChange = { newValue ->
+                  inputValue = newValue
+                  val current = dictationUndo
+                  if (current != null && newValue.text != current.after) dictationUndo = null
+                },
+                // While dictating, the box is driven by the voice, so typing is paused.
+                readOnly = voice.isListening,
+                maxLines = 5,
+                textStyle =
+                  MaterialTheme.typography.bodyLarge.copy(
+                    color = MaterialTheme.colorScheme.onSurface
+                  ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { submitInput() }),
+                decorationBox = { innerTextField ->
+                  Box(
+                    contentAlignment = Alignment.CenterStart,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
+                  ) {
+                    if (inputText.isEmpty()) {
+                      Text(
+                        text =
+                          if (voice.isListening) {
+                            "جارٍ الاستماع…"
+                          } else {
+                            stringResource(R.string.assistant_input_hint)
+                          },
+                        style = MaterialTheme.typography.bodyLarge,
+                        color =
+                          if (voice.isListening) {
+                            MaterialTheme.colorScheme.primary
+                          } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                          },
+                      )
+                    }
+                    innerTextField()
+                  }
+                },
+                modifier =
+                  Modifier.weight(1f)
+                    .focusRequester(inputFocusRequester)
+                    .testTag("chat_input_field"),
+              )
+
+              // While dictating, the mic and send buttons give way to the recording bar below.
+              if (!voice.isListening) {
+                Spacer(modifier = Modifier.width(4.dp))
+
+                // Microphone: tap to start dictating (like the mic in popular chat apps).
+                VoiceMicButton(enabled = !isTyping, onClick = onMicClick)
+
+                Spacer(modifier = Modifier.width(2.dp))
+
+                // Dim while there is nothing to send; filled with the accent color once the user
+                // has typed something, so it is clear the button is usable.
+                // ArrowForward is auto-mirrored: it points left in the RTL (Arabic) layout.
+                FilledIconButton(
+                  onClick = submitInput,
+                  enabled = canSend,
+                  colors =
+                    IconButtonDefaults.filledIconButtonColors(
+                      containerColor = MaterialTheme.colorScheme.primary,
+                      contentColor = MaterialTheme.colorScheme.onPrimary,
+                      disabledContainerColor =
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                      disabledContentColor =
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                    ),
+                  modifier = Modifier.size(44.dp).testTag("chat_send_button"),
+                ) {
+                  Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = stringResource(R.string.assistant_send_desc),
+                    modifier = Modifier.size(24.dp),
+                  )
+                }
+              }
+            }
+
+            if (voice.isListening) {
+              Spacer(modifier = Modifier.height(6.dp))
+              VoiceRecordingBar(
+                levels = voice.levels,
+                onCancel = cancelDictation,
+                onConfirm = { voice.stop() },
               )
             }
           }
@@ -596,6 +774,130 @@ fun BillAssistantScreen(
     }
   }
 
+  }
+}
+
+/** The mic button shown in the composer while no dictation is running. */
+@Composable
+private fun VoiceMicButton(enabled: Boolean, onClick: () -> Unit) {
+  IconButton(
+    onClick = onClick,
+    enabled = enabled,
+    modifier = Modifier.size(44.dp).testTag("chat_voice_button"),
+  ) {
+    Icon(
+      imageVector = Icons.Default.Mic,
+      contentDescription = "إدخال صوتي",
+      tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+  }
+}
+
+/**
+ * The bar that replaces the mic and send buttons while dictating: ✕ (cancel and discard what was
+ * dictated), the live waveform, and ✓ (finish and keep the text), like in Grok's voice input.
+ * In the right-to-left layout the first child sits on the right.
+ */
+@Composable
+private fun VoiceRecordingBar(
+  levels: List<Float>,
+  onCancel: () -> Unit,
+  onConfirm: () -> Unit,
+) {
+  Row(
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
+    FilledIconButton(
+      onClick = onCancel,
+      colors =
+        IconButtonDefaults.filledIconButtonColors(
+          containerColor = MaterialTheme.colorScheme.surface,
+          contentColor = MaterialTheme.colorScheme.onSurface,
+        ),
+      modifier = Modifier.size(44.dp).testTag("voice_cancel_button"),
+    ) {
+      Icon(
+        imageVector = Icons.Default.Close,
+        contentDescription = "إلغاء الإدخال الصوتي وحذف ما كُتب",
+      )
+    }
+    VoiceWaveform(
+      levels = levels,
+      modifier = Modifier.weight(1f).padding(horizontal = 12.dp).height(40.dp),
+    )
+    FilledIconButton(
+      onClick = onConfirm,
+      colors =
+        IconButtonDefaults.filledIconButtonColors(
+          containerColor = MaterialTheme.colorScheme.onSurface,
+          contentColor = MaterialTheme.colorScheme.surface,
+        ),
+      modifier = Modifier.size(44.dp).testTag("voice_confirm_button"),
+    ) {
+      Icon(
+        imageVector = Icons.Default.Check,
+        contentDescription = "إنهاء الإدخال الصوتي وإبقاء النص",
+      )
+    }
+  }
+}
+
+/** Scrolling bars that follow the loudness of the voice: newest on the right, quiet moments as dots. */
+@Composable
+private fun VoiceWaveform(levels: List<Float>, modifier: Modifier = Modifier) {
+  val barColor = MaterialTheme.colorScheme.onSurface
+  Canvas(modifier = modifier) {
+    val barWidth = 3.dp.toPx()
+    val step = barWidth + 3.dp.toPx()
+    val minHeight = 4.dp.toPx()
+    val count = (size.width / step).toInt().coerceAtLeast(1)
+    for (position in 0 until count) {
+      val index = levels.size - count + position
+      val level = if (index >= 0) levels[index] else 0f
+      val barHeight = minHeight + (size.height - minHeight) * level
+      val x = size.width - (count - position) * step
+      drawRoundRect(
+        color = barColor.copy(alpha = if (level < 0.05f) 0.4f else 1f),
+        topLeft = Offset(x, (size.height - barHeight) / 2f),
+        size = Size(barWidth, barHeight),
+        cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f),
+      )
+    }
+  }
+}
+
+/** Small pill above the composer that deletes the text that was just dictated. */
+@Composable
+private fun DictationUndoChip(onClick: () -> Unit) {
+  Row(
+    modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth().padding(horizontal = 16.dp),
+    horizontalArrangement = Arrangement.Start,
+  ) {
+    Surface(
+      onClick = onClick,
+      shape = RoundedCornerShape(16.dp),
+      color = MaterialTheme.colorScheme.surfaceVariant,
+      modifier = Modifier.testTag("dictation_undo_chip"),
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(start = 10.dp, end = 14.dp, top = 7.dp, bottom = 7.dp),
+      ) {
+        Icon(
+          imageVector = Icons.Default.Delete,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.onSurfaceVariant,
+          modifier = Modifier.size(16.dp),
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+          text = "حذف النص المُملى",
+          style = MaterialTheme.typography.labelLarge,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    }
   }
 }
 

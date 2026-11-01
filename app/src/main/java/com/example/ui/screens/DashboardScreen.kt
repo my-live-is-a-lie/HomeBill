@@ -117,7 +117,7 @@ fun DashboardScreen(
   budgetDashboardState: BudgetDashboardState? = null,
   onOpenAnalyticsDashboard: () -> Unit = {},
   onSaveHouseholdBudget: (Double, String, Double) -> Unit = { _, _, _ -> },
-  // Called with the sentence the user dictated to add a bill by voice.
+  // Called with the sentence the user dictated in the "add by voice" sheet.
   onVoiceBillText: (String) -> Unit = {},
 ) {
   var showBudgetDialog by remember { mutableStateOf(false) }
@@ -172,8 +172,6 @@ fun DashboardScreen(
     )
   }
 
-  // Add a bill by voice: the sheet listens, and the sentence goes to the caller, which turns it
-  // into a draft and opens the review form (nothing is saved before the user confirms there).
   if (showVoiceSheet) {
     VoiceBillEntrySheet(
       onDismiss = { showVoiceSheet = false },
@@ -268,8 +266,8 @@ fun DashboardScreen(
           ),
       )
     },
+    // A standalone button to add a bill by voice; hidden while the search bar is open.
     floatingActionButton = {
-      // Standalone "add a bill by voice" button (hidden while the search bar is open).
       if (!searchActive) {
         ExtendedFloatingActionButton(
           onClick = { showVoiceSheet = true },

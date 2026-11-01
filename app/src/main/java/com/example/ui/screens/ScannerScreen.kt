@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -503,16 +504,19 @@ fun ScannerScreen(
                   horizontalAlignment = Alignment.CenterHorizontally,
                   modifier = Modifier.padding(28.dp),
                 ) {
-                  AsyncImage(
-                    model = scanState.imageUri,
-                    contentDescription = null,
-                    contentScale = ContentScale.Crop,
-                    modifier =
-                      Modifier.fillMaxWidth()
-                        .height(200.dp)
-                        .clip(MaterialTheme.shapes.large),
-                  )
-                  Spacer(modifier = Modifier.height(20.dp))
+                  // A bill dictated by voice has no picture to show while it is being read.
+                  if (scanState.imageUri != Uri.EMPTY) {
+                    AsyncImage(
+                      model = scanState.imageUri,
+                      contentDescription = null,
+                      contentScale = ContentScale.Crop,
+                      modifier =
+                        Modifier.fillMaxWidth()
+                          .height(200.dp)
+                          .clip(MaterialTheme.shapes.large),
+                    )
+                    Spacer(modifier = Modifier.height(20.dp))
+                  }
                   CircularProgressIndicator()
                   Spacer(modifier = Modifier.height(14.dp))
                   Text(
@@ -529,6 +533,7 @@ fun ScannerScreen(
             item {
               ExtractedSheetReviewCard(
                 imageUri = scanState.imageUri,
+                fromVoice = scanState.fromVoice,
                 draft = scanState.draft,
                 categories = categories,
                 allBills = allBills,
@@ -574,6 +579,7 @@ fun ScannerScreen(
 @Composable
 private fun ExtractedSheetReviewCard(
   imageUri: Uri,
+  fromVoice: Boolean,
   draft: ScannedBillDraft,
   categories: List<BillCategory>,
   allBills: List<BillRecord>,
@@ -668,24 +674,63 @@ private fun ExtractedSheetReviewCard(
       modifier = Modifier.fillMaxWidth(),
     ) {
       Column(modifier = Modifier.padding(16.dp)) {
-        AsyncImage(
-          model = imageUri,
-          contentDescription = null,
-          contentScale = ContentScale.Crop,
-          modifier =
-            Modifier.fillMaxWidth()
-              .height(160.dp)
-              .clip(MaterialTheme.shapes.large),
-        )
         if (imageUri != Uri.EMPTY) {
+          AsyncImage(
+            model = imageUri,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier =
+              Modifier.fillMaxWidth()
+                .height(160.dp)
+                .clip(MaterialTheme.shapes.large),
+          )
           Spacer(modifier = Modifier.height(6.dp))
           Text(
             text = stringResource(R.string.bill_image_will_be_attached),
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
+          Spacer(modifier = Modifier.height(14.dp))
+        } else if (fromVoice && draft.rawExtractedText.isNotBlank()) {
+          // A bill dictated by voice: show what was heard so the user can check it against the
+          // fields below.
+          Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+            shape = MaterialTheme.shapes.large,
+            modifier = Modifier.fillMaxWidth().testTag("voice_spoken_text_card"),
+          ) {
+            Row(
+              verticalAlignment = Alignment.Top,
+              modifier = Modifier.padding(14.dp),
+            ) {
+              Icon(
+                imageVector = Icons.Default.Mic,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
+              )
+              Spacer(modifier = Modifier.width(10.dp))
+              Column {
+                Text(
+                  text = "ما قلتَه",
+                  style = MaterialTheme.typography.labelSmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                  text = "«${draft.rawExtractedText}»",
+                  style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                  text = "راجع الحقول أدناه وعدّلها قبل الحفظ، والمبلغ خاصةً",
+                  style = MaterialTheme.typography.labelSmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+              }
+            }
+          }
+          Spacer(modifier = Modifier.height(14.dp))
         }
-        Spacer(modifier = Modifier.height(14.dp))
         Row(
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.SpaceBetween,
@@ -712,9 +757,13 @@ private fun ExtractedSheetReviewCard(
             }
           }
           OutlinedButton(onClick = onRescan) {
-            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+            Icon(
+              imageVector = if (fromVoice) Icons.Default.DeleteOutline else Icons.Default.Refresh,
+              contentDescription = null,
+              modifier = Modifier.size(16.dp),
+            )
             Spacer(modifier = Modifier.width(4.dp))
-            Text(stringResource(R.string.rescan_button))
+            Text(if (fromVoice) "إلغاء" else stringResource(R.string.rescan_button))
           }
         }
 
@@ -1190,7 +1239,8 @@ private fun ExtractedSheetReviewCard(
           }
         }
 
-        if (draft.rawExtractedText.isNotBlank()) {
+        // For a dictated bill the heard sentence is already shown at the top of the card.
+        if (draft.rawExtractedText.isNotBlank() && !fromVoice) {
           Text(
             text = stringResource(R.string.extracted_raw_text_label),
             style = MaterialTheme.typography.labelLarge,

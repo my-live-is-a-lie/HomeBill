@@ -9,7 +9,6 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -17,6 +16,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -68,7 +68,6 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TipsAndUpdates
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
@@ -114,12 +113,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -142,9 +142,12 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.model.BillCategory
+import com.example.data.remote.UserGeminiKeyStore
 import com.example.ui.components.AssistantIcons
+import com.example.ui.components.Dictation
 import com.example.ui.components.FullscreenImageViewer
 import com.example.ui.components.hasMicrophonePermission
+import com.example.ui.components.rememberGeminiLiveDictation
 import com.example.ui.components.rememberVoiceDictation
 import com.example.ui.viewmodel.ChatConversation
 import com.example.ui.viewmodel.ChatImportResult
@@ -211,12 +214,18 @@ fun BillAssistantScreen(
   var showModelMenu by remember { mutableStateOf(false) }
   var thinkingExpanded by remember { mutableStateOf(false) }
 
-  // Voice dictation inside the app: tap the mic and the words appear in the input box as you speak;
-  // tap it again to stop. Afterwards a "delete dictated text" chip lets the user undo the dictation.
-  val voice = rememberVoiceDictation()
+  // Voice dictation inside the app: tap the mic and the words appear in the input box as you speak,
+  // with a waveform bar (✕ cancels and discards, ✓ keeps the text). With a Gemini key the live
+  // Gemini transcription is used (continuous recording, no dropped words); without one, the speech
+  // recognizer built into Android. Afterwards a chip lets the user delete the dictated text.
+  val liveVoice = rememberGeminiLiveDictation()
+  val builtinVoice = rememberVoiceDictation()
+  // Whichever of the two is recording right now (the built-in one when neither is).
+  val voice: Dictation = if (liveVoice.isListening) liveVoice else builtinVoice
+  var dictationBefore by remember { mutableStateOf("") }
   var dictationUndo by remember { mutableStateOf<DictationUndo?>(null) }
 
-  // Fallback for devices without an in-app speech service: the system speech screen, which puts
+  // Last resort for devices with no in-app speech service: the system speech screen, which puts
   // the recognized text into the input box once it closes.
   val voiceInputLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
@@ -255,18 +264,22 @@ fun BillAssistantScreen(
 
   val beginDictation: () -> Unit = {
     val before = inputValue.text
-    val started =
-      voice.start(
-        baseText = before,
-        onUpdate = { text ->
-          inputValue = TextFieldValue(text = text, selection = TextRange(text.length))
-        },
-        onFinished = { text ->
-          dictationUndo =
-            if (text.trim() != before.trim()) DictationUndo(before = before, after = text) else null
-        },
-        onError = { message -> Toast.makeText(context, message, Toast.LENGTH_SHORT).show() },
-      )
+    dictationBefore = before
+    val onUpdate: (String) -> Unit = { text ->
+      inputValue = TextFieldValue(text = text, selection = TextRange(text.length))
+    }
+    val onFinished: (String) -> Unit = { text ->
+      dictationUndo =
+        if (text.trim() != before.trim()) DictationUndo(before = before, after = text) else null
+    }
+    val onError: (String) -> Unit = { message ->
+      Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+    }
+    var started = false
+    if (UserGeminiKeyStore.hasKey(context)) {
+      started = liveVoice.start(before, onUpdate, onFinished, onError)
+    }
+    if (!started) started = builtinVoice.start(before, onUpdate, onFinished, onError)
     if (started) {
       dictationUndo = null
       focusManager.clearFocus() // hides the keyboard while listening
@@ -294,9 +307,18 @@ fun BillAssistantScreen(
       else -> micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
     }
   }
+  // ✕ in the recording bar: stop listening and discard what was dictated.
+  val cancelDictation: () -> Unit = {
+    liveVoice.cancel()
+    builtinVoice.cancel()
+    inputValue =
+      TextFieldValue(text = dictationBefore, selection = TextRange(dictationBefore.length))
+    dictationUndo = null
+  }
   // Switching to another conversation ends any dictation in progress.
   LaunchedEffect(activeConversation?.id) {
-    voice.cancel()
+    liveVoice.cancel()
+    builtinVoice.cancel()
     dictationUndo = null
   }
 
@@ -630,7 +652,8 @@ fun BillAssistantScreen(
       val submitInput: () -> Unit = {
         val prompt = inputText.trim()
         if (prompt.isNotEmpty() && !isTyping) {
-          voice.cancel()
+          liveVoice.cancel()
+          builtinVoice.cancel()
           dictationUndo = null
           inputValue = TextFieldValue("")
           onSendMessage(prompt)
@@ -649,91 +672,100 @@ fun BillAssistantScreen(
           shadowElevation = 2.dp,
           modifier = Modifier.fillMaxWidth(),
         ) {
-          Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(start = 20.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
-          ) {
-            BasicTextField(
-              value = inputValue,
-              onValueChange = { newValue ->
-                inputValue = newValue
-                val current = dictationUndo
-                if (current != null && newValue.text != current.after) dictationUndo = null
-              },
-              // While dictating, the box is driven by the voice, so typing is paused.
-              readOnly = voice.isListening,
-              maxLines = 5,
-              textStyle =
-                MaterialTheme.typography.bodyLarge.copy(
-                  color = MaterialTheme.colorScheme.onSurface
-                ),
-              cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-              keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-              keyboardActions = KeyboardActions(onSend = { submitInput() }),
-              decorationBox = { innerTextField ->
-                Box(
-                  contentAlignment = Alignment.CenterStart,
-                  modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
-                ) {
-                  if (inputText.isEmpty()) {
-                    Text(
-                      text =
-                        if (voice.isListening) {
-                          "جارٍ الاستماع…"
-                        } else {
-                          stringResource(R.string.assistant_input_hint)
-                        },
-                      style = MaterialTheme.typography.bodyLarge,
-                      color =
-                        if (voice.isListening) {
-                          MaterialTheme.colorScheme.primary
-                        } else {
-                          MaterialTheme.colorScheme.onSurfaceVariant
-                        },
-                    )
-                  }
-                  innerTextField()
-                }
-              },
-              modifier =
-                Modifier.weight(1f)
-                  .focusRequester(inputFocusRequester)
-                  .testTag("chat_input_field"),
-            )
-
-            Spacer(modifier = Modifier.width(4.dp))
-
-            // Microphone: tap to start dictating, tap again to stop (like the mic in popular chat apps).
-            VoiceMicButton(
-              listening = voice.isListening,
-              level = voice.level,
-              enabled = !isTyping,
-              onClick = onMicClick,
-            )
-
-            Spacer(modifier = Modifier.width(2.dp))
-
-            // Dim while there is nothing to send; filled with the accent color once the user
-            // has typed something, so it is clear the button is usable.
-            // ArrowForward is auto-mirrored: it points left in the RTL (Arabic) layout.
-            FilledIconButton(
-              onClick = submitInput,
-              enabled = canSend,
-              colors =
-                IconButtonDefaults.filledIconButtonColors(
-                  containerColor = MaterialTheme.colorScheme.primary,
-                  contentColor = MaterialTheme.colorScheme.onPrimary,
-                  disabledContainerColor =
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
-                  disabledContentColor =
-                    MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
-                ),
-              modifier = Modifier.size(44.dp).testTag("chat_send_button"),
+          Column(modifier = Modifier.padding(top = 6.dp, bottom = 6.dp)) {
+            Row(
+              verticalAlignment = Alignment.CenterVertically,
+              modifier = Modifier.padding(start = 20.dp, end = 6.dp),
             ) {
-              Icon(
-                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                contentDescription = stringResource(R.string.assistant_send_desc),
-                modifier = Modifier.size(24.dp),
+              BasicTextField(
+                value = inputValue,
+                onValueChange = { newValue ->
+                  inputValue = newValue
+                  val current = dictationUndo
+                  if (current != null && newValue.text != current.after) dictationUndo = null
+                },
+                // While dictating, the box is driven by the voice, so typing is paused.
+                readOnly = voice.isListening,
+                maxLines = 5,
+                textStyle =
+                  MaterialTheme.typography.bodyLarge.copy(
+                    color = MaterialTheme.colorScheme.onSurface
+                  ),
+                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
+                keyboardActions = KeyboardActions(onSend = { submitInput() }),
+                decorationBox = { innerTextField ->
+                  Box(
+                    contentAlignment = Alignment.CenterStart,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
+                  ) {
+                    if (inputText.isEmpty()) {
+                      Text(
+                        text =
+                          if (voice.isListening) {
+                            "جارٍ الاستماع…"
+                          } else {
+                            stringResource(R.string.assistant_input_hint)
+                          },
+                        style = MaterialTheme.typography.bodyLarge,
+                        color =
+                          if (voice.isListening) {
+                            MaterialTheme.colorScheme.primary
+                          } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                          },
+                      )
+                    }
+                    innerTextField()
+                  }
+                },
+                modifier =
+                  Modifier.weight(1f)
+                    .focusRequester(inputFocusRequester)
+                    .testTag("chat_input_field"),
+              )
+
+              // While dictating, the mic and send buttons give way to the recording bar below.
+              if (!voice.isListening) {
+                Spacer(modifier = Modifier.width(4.dp))
+
+                // Microphone: tap to start dictating (like the mic in popular chat apps).
+                VoiceMicButton(enabled = !isTyping, onClick = onMicClick)
+
+                Spacer(modifier = Modifier.width(2.dp))
+
+                // Dim while there is nothing to send; filled with the accent color once the user
+                // has typed something, so it is clear the button is usable.
+                // ArrowForward is auto-mirrored: it points left in the RTL (Arabic) layout.
+                FilledIconButton(
+                  onClick = submitInput,
+                  enabled = canSend,
+                  colors =
+                    IconButtonDefaults.filledIconButtonColors(
+                      containerColor = MaterialTheme.colorScheme.primary,
+                      contentColor = MaterialTheme.colorScheme.onPrimary,
+                      disabledContainerColor =
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f),
+                      disabledContentColor =
+                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                    ),
+                  modifier = Modifier.size(44.dp).testTag("chat_send_button"),
+                ) {
+                  Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                    contentDescription = stringResource(R.string.assistant_send_desc),
+                    modifier = Modifier.size(24.dp),
+                  )
+                }
+              }
+            }
+
+            if (voice.isListening) {
+              Spacer(modifier = Modifier.height(6.dp))
+              VoiceRecordingBar(
+                levels = voice.levels,
+                onCancel = cancelDictation,
+                onConfirm = { voice.stop() },
               )
             }
           }
@@ -745,54 +777,91 @@ fun BillAssistantScreen(
   }
 }
 
+/** The mic button shown in the composer while no dictation is running. */
+@Composable
+private fun VoiceMicButton(enabled: Boolean, onClick: () -> Unit) {
+  IconButton(
+    onClick = onClick,
+    enabled = enabled,
+    modifier = Modifier.size(44.dp).testTag("chat_voice_button"),
+  ) {
+    Icon(
+      imageVector = Icons.Default.Mic,
+      contentDescription = "إدخال صوتي",
+      tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+  }
+}
+
 /**
- * The mic button in the composer. Idle: a plain mic. Listening: a red stop button with a soft
- * ring around it that swells with the loudness of the voice.
+ * The bar that replaces the mic and send buttons while dictating: ✕ (cancel and discard what was
+ * dictated), the live waveform, and ✓ (finish and keep the text), like in Grok's voice input.
+ * In the right-to-left layout the first child sits on the right.
  */
 @Composable
-private fun VoiceMicButton(
-  listening: Boolean,
-  level: Float,
-  enabled: Boolean,
-  onClick: () -> Unit,
+private fun VoiceRecordingBar(
+  levels: List<Float>,
+  onCancel: () -> Unit,
+  onConfirm: () -> Unit,
 ) {
-  val pulse by
-    animateFloatAsState(
-      targetValue = if (listening) 1f + level * 0.5f else 1f,
-      label = "voiceMicPulse",
-    )
-  Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-    if (listening) {
-      Box(
-        modifier =
-          Modifier.size(40.dp)
-            .graphicsLayer {
-              scaleX = pulse
-              scaleY = pulse
-            }
-            .background(MaterialTheme.colorScheme.error.copy(alpha = 0.25f), CircleShape)
-      )
-    }
+  Row(
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+    verticalAlignment = Alignment.CenterVertically,
+  ) {
     FilledIconButton(
-      onClick = onClick,
-      enabled = enabled,
+      onClick = onCancel,
       colors =
         IconButtonDefaults.filledIconButtonColors(
-          containerColor =
-            if (listening) MaterialTheme.colorScheme.error
-            else androidx.compose.ui.graphics.Color.Transparent,
-          contentColor =
-            if (listening) MaterialTheme.colorScheme.onError
-            else MaterialTheme.colorScheme.onSurfaceVariant,
-          disabledContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-          disabledContentColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+          containerColor = MaterialTheme.colorScheme.surface,
+          contentColor = MaterialTheme.colorScheme.onSurface,
         ),
-      modifier = Modifier.size(40.dp).testTag("chat_voice_button"),
+      modifier = Modifier.size(44.dp).testTag("voice_cancel_button"),
     ) {
       Icon(
-        imageVector = if (listening) Icons.Default.Stop else Icons.Default.Mic,
-        contentDescription = if (listening) "إيقاف الإدخال الصوتي" else "إدخال صوتي",
-        modifier = Modifier.size(22.dp),
+        imageVector = Icons.Default.Close,
+        contentDescription = "إلغاء الإدخال الصوتي وحذف ما كُتب",
+      )
+    }
+    VoiceWaveform(
+      levels = levels,
+      modifier = Modifier.weight(1f).padding(horizontal = 12.dp).height(40.dp),
+    )
+    FilledIconButton(
+      onClick = onConfirm,
+      colors =
+        IconButtonDefaults.filledIconButtonColors(
+          containerColor = MaterialTheme.colorScheme.onSurface,
+          contentColor = MaterialTheme.colorScheme.surface,
+        ),
+      modifier = Modifier.size(44.dp).testTag("voice_confirm_button"),
+    ) {
+      Icon(
+        imageVector = Icons.Default.Check,
+        contentDescription = "إنهاء الإدخال الصوتي وإبقاء النص",
+      )
+    }
+  }
+}
+
+/** Scrolling bars that follow the loudness of the voice: newest on the right, quiet moments as dots. */
+@Composable
+private fun VoiceWaveform(levels: List<Float>, modifier: Modifier = Modifier) {
+  val barColor = MaterialTheme.colorScheme.onSurface
+  Canvas(modifier = modifier) {
+    val barWidth = 3.dp.toPx()
+    val step = barWidth + 3.dp.toPx()
+    val minHeight = 4.dp.toPx()
+    val count = (size.width / step).toInt().coerceAtLeast(1)
+    for (position in 0 until count) {
+      val index = levels.size - count + position
+      val level = if (index >= 0) levels[index] else 0f
+      val barHeight = minHeight + (size.height - minHeight) * level
+      val x = size.width - (count - position) * step
+      drawRoundRect(
+        color = barColor.copy(alpha = if (level < 0.05f) 0.4f else 1f),
+        topLeft = Offset(x, (size.height - barHeight) / 2f),
+        size = Size(barWidth, barHeight),
+        cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f),
       )
     }
   }

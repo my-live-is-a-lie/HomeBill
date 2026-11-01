@@ -691,40 +691,38 @@ private fun ExtractedSheetReviewCard(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
           Spacer(modifier = Modifier.height(14.dp))
-        } else if (fromVoice && draft.rawExtractedText.isNotBlank()) {
-          // A bill dictated by voice: show what was heard so the user can check it against the
-          // fields below.
+        }
+
+        // A bill dictated by voice shows the sentence that was heard instead of a picture, so the
+        // user can check what the numbers below were read from.
+        if (fromVoice && draft.rawExtractedText.isNotBlank()) {
           Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-            shape = MaterialTheme.shapes.large,
-            modifier = Modifier.fillMaxWidth().testTag("voice_spoken_text_card"),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f),
+            shape = MaterialTheme.shapes.medium,
+            modifier = Modifier.fillMaxWidth().testTag("voice_bill_quote_card"),
           ) {
             Row(
               verticalAlignment = Alignment.Top,
-              modifier = Modifier.padding(14.dp),
+              modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             ) {
               Icon(
                 imageVector = Icons.Default.Mic,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp),
+                modifier = Modifier.size(18.dp),
               )
-              Spacer(modifier = Modifier.width(10.dp))
+              Spacer(modifier = Modifier.width(8.dp))
               Column {
                 Text(
-                  text = "ما قلتَه",
+                  text = "ما قلته للتطبيق — راجع الأرقام قبل الحفظ",
                   style = MaterialTheme.typography.labelSmall,
                   color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                  text = "«${draft.rawExtractedText}»",
+                  text = draft.rawExtractedText,
                   style = MaterialTheme.typography.bodyMedium,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                  text = "راجع الحقول أدناه وعدّلها قبل الحفظ، والمبلغ خاصةً",
-                  style = MaterialTheme.typography.labelSmall,
-                  color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  color = MaterialTheme.colorScheme.onSurface,
                 )
               }
             }
@@ -757,11 +755,7 @@ private fun ExtractedSheetReviewCard(
             }
           }
           OutlinedButton(onClick = onRescan) {
-            Icon(
-              imageVector = if (fromVoice) Icons.Default.DeleteOutline else Icons.Default.Refresh,
-              contentDescription = null,
-              modifier = Modifier.size(16.dp),
-            )
+            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(4.dp))
             Text(if (fromVoice) "إلغاء" else stringResource(R.string.rescan_button))
           }
@@ -1239,7 +1233,7 @@ private fun ExtractedSheetReviewCard(
           }
         }
 
-        // For a dictated bill the heard sentence is already shown at the top of the card.
+        // For a dictated bill the sentence is already shown at the top of the card.
         if (draft.rawExtractedText.isNotBlank() && !fromVoice) {
           Text(
             text = stringResource(R.string.extracted_raw_text_label),

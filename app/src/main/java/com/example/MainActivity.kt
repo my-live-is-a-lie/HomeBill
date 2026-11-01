@@ -194,8 +194,8 @@ fun AuthenticatedAppShell(currentUserId: String) {
     }
   }
 
-  // A bill dictated by voice (from the bills screen or the assistant's input bar): turn the sentence
-  // into a draft and open the review form on the scan tab, where the user confirms before saving.
+  // A bill dictated by voice (from the bills screen or the assistant): turn the sentence into a
+  // draft and open the scanner tab, whose review form shows it for confirmation before saving.
   val openVoiceBill: (String) -> Unit = { spokenText ->
     vm.scanBillText(spokenText)
     navController.navigate(ScannerRoute()) {

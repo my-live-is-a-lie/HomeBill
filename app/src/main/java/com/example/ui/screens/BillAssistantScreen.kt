@@ -16,7 +16,6 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -53,6 +52,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BarChart
@@ -113,9 +113,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
@@ -146,6 +144,7 @@ import com.example.data.remote.UserGeminiKeyStore
 import com.example.ui.components.AssistantIcons
 import com.example.ui.components.Dictation
 import com.example.ui.components.FullscreenImageViewer
+import com.example.ui.components.VoiceRecordingBar
 import com.example.ui.components.hasMicrophonePermission
 import com.example.ui.components.rememberGeminiLiveDictation
 import com.example.ui.components.rememberVoiceDictation
@@ -199,6 +198,8 @@ fun BillAssistantScreen(
   isTemporaryChat: Boolean = false,
   imageAttachment: AssistantImageAttachment? = null,
   onRemoveImageAttachment: () -> Unit = {},
+  // Called with the dictated sentence when the user taps "record as a bill" after dictating.
+  onVoiceBillText: (String) -> Unit = {},
 ) {
   var inputValue by
     rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue("")) }
@@ -217,7 +218,8 @@ fun BillAssistantScreen(
   // Voice dictation inside the app: tap the mic and the words appear in the input box as you speak,
   // with a waveform bar (✕ cancels and discards, ✓ keeps the text). With a Gemini key the live
   // Gemini transcription is used (continuous recording, no dropped words); without one, the speech
-  // recognizer built into Android. Afterwards a chip lets the user delete the dictated text.
+  // recognizer built into Android. Afterwards two chips appear: delete the dictated text, or record
+  // it as a bill (the sentence is turned into a bill draft that opens in the review form).
   val liveVoice = rememberGeminiLiveDictation()
   val builtinVoice = rememberVoiceDictation()
   // Whichever of the two is recording right now (the built-in one when neither is).
@@ -635,14 +637,26 @@ fun BillAssistantScreen(
         )
       }
 
-      // After a dictation ends: one tap removes only the dictated text (restores what was there
-      // before). It disappears as soon as the user edits the text or sends the message.
+      // After a dictation ends: delete only the dictated text, or record it as a bill. Both
+      // disappear as soon as the user edits the text or sends the message.
       val undo = dictationUndo
       if (undo != null && !voice.isListening) {
-        DictationUndoChip(
-          onClick = {
+        DictationChips(
+          onDelete = {
             inputValue = TextFieldValue(text = undo.before, selection = TextRange(undo.before.length))
             dictationUndo = null
+          },
+          onRecordBill = {
+            // Only the part that was just dictated goes to the bill, not what was typed before it.
+            val dictated =
+              if (undo.after.startsWith(undo.before)) {
+                undo.after.substring(undo.before.length).trim()
+              } else {
+                undo.after.trim()
+              }
+            inputValue = TextFieldValue(text = undo.before, selection = TextRange(undo.before.length))
+            dictationUndo = null
+            if (dictated.isNotBlank()) onVoiceBillText(dictated)
           },
         )
       }
@@ -794,88 +808,18 @@ private fun VoiceMicButton(enabled: Boolean, onClick: () -> Unit) {
 }
 
 /**
- * The bar that replaces the mic and send buttons while dictating: ✕ (cancel and discard what was
- * dictated), the live waveform, and ✓ (finish and keep the text), like in Grok's voice input.
- * In the right-to-left layout the first child sits on the right.
+ * Two small pills above the composer after a dictation: delete the dictated text, or record the
+ * dictated sentence as a bill (it opens in the bill review form, nothing is saved before the user
+ * confirms there).
  */
 @Composable
-private fun VoiceRecordingBar(
-  levels: List<Float>,
-  onCancel: () -> Unit,
-  onConfirm: () -> Unit,
-) {
+private fun DictationChips(onDelete: () -> Unit, onRecordBill: () -> Unit) {
   Row(
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-    verticalAlignment = Alignment.CenterVertically,
-  ) {
-    FilledIconButton(
-      onClick = onCancel,
-      colors =
-        IconButtonDefaults.filledIconButtonColors(
-          containerColor = MaterialTheme.colorScheme.surface,
-          contentColor = MaterialTheme.colorScheme.onSurface,
-        ),
-      modifier = Modifier.size(44.dp).testTag("voice_cancel_button"),
-    ) {
-      Icon(
-        imageVector = Icons.Default.Close,
-        contentDescription = "إلغاء الإدخال الصوتي وحذف ما كُتب",
-      )
-    }
-    VoiceWaveform(
-      levels = levels,
-      modifier = Modifier.weight(1f).padding(horizontal = 12.dp).height(40.dp),
-    )
-    FilledIconButton(
-      onClick = onConfirm,
-      colors =
-        IconButtonDefaults.filledIconButtonColors(
-          containerColor = MaterialTheme.colorScheme.onSurface,
-          contentColor = MaterialTheme.colorScheme.surface,
-        ),
-      modifier = Modifier.size(44.dp).testTag("voice_confirm_button"),
-    ) {
-      Icon(
-        imageVector = Icons.Default.Check,
-        contentDescription = "إنهاء الإدخال الصوتي وإبقاء النص",
-      )
-    }
-  }
-}
-
-/** Scrolling bars that follow the loudness of the voice: newest on the right, quiet moments as dots. */
-@Composable
-private fun VoiceWaveform(levels: List<Float>, modifier: Modifier = Modifier) {
-  val barColor = MaterialTheme.colorScheme.onSurface
-  Canvas(modifier = modifier) {
-    val barWidth = 3.dp.toPx()
-    val step = barWidth + 3.dp.toPx()
-    val minHeight = 4.dp.toPx()
-    val count = (size.width / step).toInt().coerceAtLeast(1)
-    for (position in 0 until count) {
-      val index = levels.size - count + position
-      val level = if (index >= 0) levels[index] else 0f
-      val barHeight = minHeight + (size.height - minHeight) * level
-      val x = size.width - (count - position) * step
-      drawRoundRect(
-        color = barColor.copy(alpha = if (level < 0.05f) 0.4f else 1f),
-        topLeft = Offset(x, (size.height - barHeight) / 2f),
-        size = Size(barWidth, barHeight),
-        cornerRadius = CornerRadius(barWidth / 2f, barWidth / 2f),
-      )
-    }
-  }
-}
-
-/** Small pill above the composer that deletes the text that was just dictated. */
-@Composable
-private fun DictationUndoChip(onClick: () -> Unit) {
-  Row(
+    horizontalArrangement = Arrangement.spacedBy(8.dp),
     modifier = Modifier.widthIn(max = 760.dp).fillMaxWidth().padding(horizontal = 16.dp),
-    horizontalArrangement = Arrangement.Start,
   ) {
     Surface(
-      onClick = onClick,
+      onClick = onDelete,
       shape = RoundedCornerShape(16.dp),
       color = MaterialTheme.colorScheme.surfaceVariant,
       modifier = Modifier.testTag("dictation_undo_chip"),
@@ -895,6 +839,30 @@ private fun DictationUndoChip(onClick: () -> Unit) {
           text = "حذف النص المُملى",
           style = MaterialTheme.typography.labelLarge,
           color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+      }
+    }
+    Surface(
+      onClick = onRecordBill,
+      shape = RoundedCornerShape(16.dp),
+      color = MaterialTheme.colorScheme.primaryContainer,
+      modifier = Modifier.testTag("dictation_record_bill_chip"),
+    ) {
+      Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(start = 10.dp, end = 14.dp, top = 7.dp, bottom = 7.dp),
+      ) {
+        Icon(
+          imageVector = Icons.AutoMirrored.Filled.ReceiptLong,
+          contentDescription = null,
+          tint = MaterialTheme.colorScheme.onPrimaryContainer,
+          modifier = Modifier.size(16.dp),
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+          text = "سجّلها كفاتورة",
+          style = MaterialTheme.typography.labelLarge,
+          color = MaterialTheme.colorScheme.onPrimaryContainer,
         )
       }
     }

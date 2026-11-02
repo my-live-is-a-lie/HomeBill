@@ -17,6 +17,7 @@ import com.example.data.model.HouseholdBudget
 import com.example.data.model.UiState
 import com.example.data.model.UtilityType
 import com.example.data.remote.GeminiBillScanner
+import com.example.data.remote.GeminiBillTextScanner
 import com.example.data.remote.ScannedBillDraft
 import com.example.data.repository.BillRepository
 import com.example.domain.BillAnalyticsEngine
@@ -27,6 +28,9 @@ import com.example.domain.MonthlyAnalyticsSummary
 import com.example.domain.MonthlyBudgetDashboardEngine
 import com.example.util.BillImageStore
 import com.google.firebase.firestore.FirebaseFirestore
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -49,6 +53,8 @@ sealed interface ScanUiState {
     val imageUri: Uri,
     val draft: ScannedBillDraft,
     val preselectedCategoryId: String?,
+    // True when the draft came from a dictated sentence instead of a picture of a bill.
+    val fromVoice: Boolean = false,
   ) : ScanUiState
 
   data class Error(val message: String, val lastUri: Uri? = null) : ScanUiState
@@ -59,6 +65,7 @@ class HomeBillsViewModel(
   private val scanner: GeminiBillScanner,
   val currentUserId: String,
   private val appContext: Context? = null,
+  private val textScanner: GeminiBillTextScanner = GeminiBillTextScanner(scanner),
 ) : ViewModel() {
 
   val categoriesState: StateFlow<UiState<List<BillCategory>>> =
@@ -424,6 +431,42 @@ class HomeBillsViewModel(
     }
   }
 
+  /**
+   * Turns a dictated sentence ("دفعت فاتورة الكهرباء ٣٥٠ جنيه اليوم") into a bill draft and shows it in
+   * the same review form as a scanned bill; nothing is saved until the user confirms there.
+   */
+  fun scanBillText(spokenText: String) {
+    viewModelScope.launch {
+      _scanState.value = ScanUiState.Scanning(Uri.EMPTY)
+      val categoryNames = (categoriesState.value as? UiState.Success)?.data.orEmpty().map { it.name }
+      val todayIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+      val currency = analyticsSummary.value.primaryCurrency.ifBlank { "ر.س" }
+      textScanner
+        .scanBillText(
+          spokenText = spokenText,
+          todayIso = todayIso,
+          defaultCurrency = currency,
+          categoryNames = categoryNames,
+        )
+        .onSuccess { draft ->
+          _scanState.value =
+            ScanUiState.Extracted(
+              imageUri = Uri.EMPTY,
+              draft = draft,
+              preselectedCategoryId = null,
+              fromVoice = true,
+            )
+        }
+        .onFailure { err ->
+          _scanState.value =
+            ScanUiState.Error(
+              message = err.localizedMessage ?: "تعذر تحويل الجملة المنطوقة إلى فاتورة.",
+              lastUri = null,
+            )
+        }
+    }
+  }
+
   fun updateScannedDraft(updated: ScannedBillDraft) {
     val current = _scanState.value
     if (current is ScanUiState.Extracted) {
@@ -459,8 +502,11 @@ class HomeBillsViewModel(
     selectedCategoryId: String?,
     onSuccessNavigateToCategory: (String) -> Unit,
   ) {
-    // The scanned (cropped/filtered) image that will be attached to the saved bill.
-    val scannedImageUri: Uri? = (_scanState.value as? ScanUiState.Extracted)?.imageUri
+    // The scanned (cropped/filtered) image that will be attached to the saved bill. A bill that
+    // came from a dictated sentence has no image.
+    val extractedNow = _scanState.value as? ScanUiState.Extracted
+    val scannedImageUri: Uri? = extractedNow?.imageUri
+    val isVoiceEntry = extractedNow?.fromVoice == true
 
     viewModelScope.launch {
       _isSaving.value = true
@@ -515,7 +561,7 @@ class HomeBillsViewModel(
               providerName = draft.storeName.ifBlank { draft.providerName },
               rawExtractedText = draft.rawExtractedText,
               notes = "",
-              sourceType = "camera_ai",
+              sourceType = if (isVoiceEntry) "voice_ai" else "camera_ai",
               sheetItems =
                 draft.sheetRows.ifEmpty {
                   listOf(
@@ -540,7 +586,7 @@ class HomeBillsViewModel(
             .onSuccess { savedBillId ->
               // Attach the scanned image to the new bill (stored on the phone, keyed by bill id).
               val ctx = appContext
-              if (ctx != null && scannedImageUri != null) {
+              if (ctx != null && scannedImageUri != null && !isVoiceEntry) {
                 withContext(Dispatchers.IO) {
                   BillImageStore.saveForBill(ctx, scannedImageUri, savedBillId)
                 }
@@ -551,7 +597,7 @@ class HomeBillsViewModel(
                 val pct =
                   comparison.amountChangePercent ?: comparison.consumptionChangePercent ?: 0.0
                 _snackbarMessage.value =
-                  "تنبيه تفاوت! أُضيفت الفاتورة إلى «${targetCat.name}» مع ارتفاع +${String.format(java.util.Locale.US, "%.1f", pct)}% عن السابقة."
+                  "تنبيه تفاوت! أضيفت الفاتورة إلى «${targetCat.name}» مع ارتفاع +${String.format(java.util.Locale.US, "%.1f", pct)}% عن السابقة."
               } else {
                 _snackbarMessage.value =
                   "تم إنشاء الـ Sheet وإضافة الفاتورة إلى «${targetCat.name}» بنجاح!"

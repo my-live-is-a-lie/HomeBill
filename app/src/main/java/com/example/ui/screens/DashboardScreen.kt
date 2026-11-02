@@ -29,12 +29,14 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -89,6 +91,7 @@ import com.example.ui.components.SearchedBillRecordCard
 import com.example.ui.components.UtilityIconAvatar
 import com.example.ui.components.VarianceAlertBannerCard
 import com.example.ui.components.VarianceBadge
+import com.example.ui.components.VoiceBillEntrySheet
 import com.example.ui.theme.LocalUtilityPalette
 import com.example.util.DateAndFormatUtils
 
@@ -114,8 +117,11 @@ fun DashboardScreen(
   budgetDashboardState: BudgetDashboardState? = null,
   onOpenAnalyticsDashboard: () -> Unit = {},
   onSaveHouseholdBudget: (Double, String, Double) -> Unit = { _, _, _ -> },
+  // Called with the sentence the user dictated in the "add by voice" sheet.
+  onVoiceBillText: (String) -> Unit = {},
 ) {
   var showBudgetDialog by remember { mutableStateOf(false) }
+  var showVoiceSheet by remember { mutableStateOf(false) }
   var activeComparison by remember { mutableStateOf<BillComparisonResult?>(null) }
   var activeSheetBill by remember { mutableStateOf<BillRecord?>(null) }
   var editingSearchBill by remember { mutableStateOf<BillRecord?>(null) }
@@ -162,6 +168,16 @@ fun DashboardScreen(
       onSave = { newLimit, newWarn ->
         showBudgetDialog = false
         onSaveHouseholdBudget(newLimit, effectiveBudgetState.primaryCurrency, newWarn)
+      },
+    )
+  }
+
+  if (showVoiceSheet) {
+    VoiceBillEntrySheet(
+      onDismiss = { showVoiceSheet = false },
+      onTextReady = { spokenText ->
+        showVoiceSheet = false
+        onVoiceBillText(spokenText)
       },
     )
   }
@@ -249,6 +265,17 @@ fun DashboardScreen(
             containerColor = MaterialTheme.colorScheme.background
           ),
       )
+    },
+    // A standalone button to add a bill by voice; hidden while the search bar is open.
+    floatingActionButton = {
+      if (!searchActive) {
+        ExtendedFloatingActionButton(
+          onClick = { showVoiceSheet = true },
+          icon = { Icon(imageVector = Icons.Default.Mic, contentDescription = null) },
+          text = { Text("إضافة بالصوت") },
+          modifier = Modifier.testTag("dashboard_voice_bill_button"),
+        )
+      }
     },
     containerColor = MaterialTheme.colorScheme.background,
   ) { innerPadding ->

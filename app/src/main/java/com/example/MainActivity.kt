@@ -194,6 +194,16 @@ fun AuthenticatedAppShell(currentUserId: String) {
     }
   }
 
+  // A bill dictated by voice (from the bills screen or the assistant): turn the sentence into a
+  // draft and open the scanner tab, whose review form shows it for confirmation before saving.
+  val openVoiceBill: (String) -> Unit = { spokenText ->
+    vm.scanBillText(spokenText)
+    navController.navigate(ScannerRoute()) {
+      popUpTo(DashboardRoute) { inclusive = false }
+      launchSingleTop = true
+    }
+  }
+
   val backStackEntry by navController.currentBackStackEntryAsState()
   val currentDest = backStackEntry?.destination
 
@@ -473,6 +483,7 @@ fun AuthenticatedAppShell(currentUserId: String) {
                 onSaveHouseholdBudget = { limit, curr, warn ->
                   vm.saveHouseholdBudget(limit, curr, warn)
                 },
+                onVoiceBillText = openVoiceBill,
               )
             }
 
@@ -535,6 +546,7 @@ fun AuthenticatedAppShell(currentUserId: String) {
                 },
                 imageAttachment = assistantImageAttachment,
                 onRemoveImageAttachment = { AssistantImageBridge.clear() },
+                onVoiceBillText = openVoiceBill,
               )
             }
 

@@ -462,8 +462,8 @@ fun AuthenticatedAppShell(currentUserId: String) {
                     launchSingleTop = true
                   }
                 },
-                onCreateCategory = { name, uType, unit, threshold ->
-                  vm.createCategory(name, uType, unit, threshold) { created ->
+                onCreateCategory = { name, uType, unit, threshold, trackDuration ->
+                  vm.createCategory(name, uType, unit, threshold, trackDuration) { created ->
                     navController.navigate(CategoryDetailRoute(created.id))
                   }
                 },
@@ -572,8 +572,8 @@ fun AuthenticatedAppShell(currentUserId: String) {
                   }
                 },
                 onResetScan = { vm.resetScanState() },
-                onCreateCategory = { name, uType, unit, threshold ->
-                  vm.createCategory(name, uType, unit, threshold)
+                onCreateCategory = { name, uType, unit, threshold, trackDuration ->
+                  vm.createCategory(name, uType, unit, threshold, trackDuration)
                 },
               )
             }
@@ -628,6 +628,9 @@ fun AuthenticatedAppShell(currentUserId: String) {
                 onDeleteCategory = { catId ->
                   vm.deleteCategory(catId) { navController.popBackStack() }
                 },
+                onStartBillConsumption = { bill -> vm.markBillConsumptionStarted(bill) },
+                onEndBillConsumption = { bill -> vm.markBillConsumptionEnded(bill) },
+                onUndoBillConsumptionEnd = { bill -> vm.undoBillConsumptionEnded(bill) },
               )
             }
           }

@@ -124,6 +124,8 @@ data class BillCategory(
   val alertThresholdPercent: Double = 25.0,
   @ServerTimestamp val createdAt: Timestamp? = null,
   @ServerTimestamp val updatedAt: Timestamp? = null,
+  // When true, bills of this category show consumption start/end tracking in the bill sheet.
+  val trackDuration: Boolean = false,
 )
 
 @IgnoreExtraProperties
@@ -151,6 +153,10 @@ data class BillRecord(
   val sheetItems: List<BillSheetRow> = emptyList(),
   @ServerTimestamp val createdAt: Timestamp? = null,
   @ServerTimestamp val updatedAt: Timestamp? = null,
+  // Consumption tracking timestamps (epoch millis). Null means the step has not happened yet:
+  // startedAt null = consumption never started, endedAt null = consumption still running.
+  val startedAtEpochMillis: Long? = null,
+  val endedAtEpochMillis: Long? = null,
 )
 
 @IgnoreExtraProperties

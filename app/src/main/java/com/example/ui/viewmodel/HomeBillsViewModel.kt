@@ -263,11 +263,19 @@ class HomeBillsViewModel(
     utilityType: UtilityType,
     defaultUnit: String,
     alertThresholdPercent: Double,
+    trackDuration: Boolean = false,
     onCreated: (BillCategory) -> Unit = {},
   ) {
     viewModelScope.launch {
       _isSaving.value = true
-      val res = repository.createCategory(name, utilityType, defaultUnit, alertThresholdPercent)
+      val res =
+        repository.createCategory(
+          name,
+          utilityType,
+          defaultUnit,
+          alertThresholdPercent,
+          trackDuration,
+        )
       _isSaving.value = false
       res
         .onSuccess { cat ->
@@ -293,6 +301,45 @@ class HomeBillsViewModel(
         .onFailure { err ->
           _snackbarMessage.value = err.localizedMessage ?: "تعذر تحديث القسم"
         }
+    }
+  }
+
+  // Records the moment consumption of a bill starts. Silent on success: the bill sheet swaps
+  // its start button for the end button as soon as the updated bill flows back.
+  fun markBillConsumptionStarted(bill: BillRecord) {
+    viewModelScope.launch {
+      _isSaving.value = true
+      val res = repository.updateBill(bill.copy(startedAtEpochMillis = System.currentTimeMillis()))
+      _isSaving.value = false
+      res.onFailure { err ->
+        _snackbarMessage.value = err.localizedMessage ?: "تعذر تسجيل بدء الاستهلاك"
+      }
+    }
+  }
+
+  // Records the moment consumption of a bill ends. Silent on success: the caller shows its own
+  // confirmation snackbar with the undo action, so no second message is posted here.
+  fun markBillConsumptionEnded(bill: BillRecord) {
+    viewModelScope.launch {
+      _isSaving.value = true
+      val res = repository.updateBill(bill.copy(endedAtEpochMillis = System.currentTimeMillis()))
+      _isSaving.value = false
+      res.onFailure { err ->
+        _snackbarMessage.value = err.localizedMessage ?: "تعذر تسجيل انتهاء الاستهلاك"
+      }
+    }
+  }
+
+  // Reverts an end recording (the snackbar undo action). The bill returns to the
+  // started-but-not-ended state and the end button appears again.
+  fun undoBillConsumptionEnded(bill: BillRecord) {
+    viewModelScope.launch {
+      _isSaving.value = true
+      val res = repository.updateBill(bill.copy(endedAtEpochMillis = null))
+      _isSaving.value = false
+      res.onFailure { err ->
+        _snackbarMessage.value = err.localizedMessage ?: "تعذر التراجع عن إنهاء الاستهلاك"
+      }
     }
   }
 

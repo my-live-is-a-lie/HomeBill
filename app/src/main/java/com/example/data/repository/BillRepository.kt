@@ -156,6 +156,7 @@ class BillRepository(
     utilityType: UtilityType,
     defaultUnit: String,
     alertThresholdPercent: Double = 25.0,
+    trackDuration: Boolean = false,
   ): Result<BillCategory> = runCatching {
     val uid = requireUserId()
     val docRef = db.collection(CATEGORIES_COLLECTION).document()
@@ -173,6 +174,7 @@ class BillRepository(
         alertThresholdPercent = clampedThreshold,
         createdAt = null,
         updatedAt = null,
+        trackDuration = trackDuration,
       )
     try {
       docRef.set(category).await()

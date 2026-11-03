@@ -126,6 +126,27 @@ object DateAndFormatUtils {
     }
   }
 
+  // Formats an epoch-millis timestamp as an Arabic date, reusing the ISO date formatter so
+  // consumption start/end dates render exactly like bill dates elsewhere in the app.
+  fun formatEpochMillisArabic(epochMillis: Long): String {
+    return formatIsoDateArabic(epochMillisToIsoDate(epochMillis))
+  }
+
+  // Whole days between two epoch-millis timestamps, never negative. A consumption that starts
+  // and ends on the same day counts as 0 days; each full 24-hour period adds one day.
+  fun durationDaysBetween(startEpochMillis: Long, endEpochMillis: Long): Long {
+    return ((endEpochMillis - startEpochMillis) / 86_400_000L).coerceAtLeast(0L)
+  }
+
+  // Arabic day-count wording with correct singular/dual/plural forms.
+  fun formatDurationDaysArabic(days: Long): String {
+    return when (days) {
+      1L -> "يوم واحد"
+      2L -> "يومان"
+      else -> "$days أيام"
+    }
+  }
+
   fun parseFlexibleDouble(input: String): Double? {
     val normalized =
       input

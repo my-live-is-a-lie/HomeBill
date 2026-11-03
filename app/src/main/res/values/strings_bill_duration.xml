@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="duration_track_label">تتبع مدة استهلاك الفواتير</string>
+  <string name="duration_track_desc">إظهار زر بدء الاستهلاك وإنهائه في تفاصيل فواتير هذا القسم</string>
+  <string name="duration_start_button">بدء الاستهلاك</string>
+  <string name="duration_end_button">إنهاء الاستهلاك</string>
+  <string name="duration_end_confirm_title">إنهاء استهلاك الفاتورة؟</string>
+  <string name="duration_end_confirm_body">سيتم تسجيل موعد انتهاء استهلاك هذه الفاتورة الآن.</string>
+  <string name="duration_action_confirm">تأكيد</string>
+  <string name="duration_ended_message">انتهى استهلاك الفاتورة</string>
+  <string name="duration_action_undo">تراجع</string>
+  <string name="duration_in_use">قيد الاستخدام</string>
+  <string name="duration_ended_label">انتهت</string>
+  <string name="duration_started_on">بدأ الاستهلاك في %1$s</string>
+  <string name="duration_ended_on">انتهت في %1$s</string>
+  <string name="duration_lasted_days">استمرت %1$s</string>
+  <string name="duration_card_ended">انتهت · استمرت %1$s</string>
+  <string name="duration_average_title">متوسط مدة الاستهلاك</string>
+  <string name="duration_ended_count">عدد الفواتير المنتهية: %1$d</string>
+</resources>

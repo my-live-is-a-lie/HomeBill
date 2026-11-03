@@ -82,8 +82,16 @@ class BillChatViewModel(
   // model claim can never change the setting on its own.
   private var pendingCurrencyProposal: CurrencyProposal? = null
 
+  // True after the app asked the user to name their country (IP lookup
+  // failed, or the currency could not be determined from it). While true,
+  // a country-like answer is routed to the currency flow instead of being
+  // classified as general chat, so the model keeps the currency protocol
+  // and returns a proposal instead of merely claiming success in prose.
+  private var awaitingCountryName = false
+
   private fun clearPendingCurrencyProposal() {
     pendingCurrencyProposal = null
+    awaitingCountryName = false
   }
 
   /**
@@ -390,6 +398,16 @@ class BillChatViewModel(
     // Pick the smallest context that can answer this prompt. A bill image
     // attached to the turn keeps full context: image questions may need
     // category context to classify what the photo shows.
+    // A country-like answer while the app awaits a country name goes to
+    // the currency flow: without the currency rules, the model would
+    // answer a bare country name with a prose success claim and no
+    // proposal action, so nothing would ever be applied.
+    val isCountryAnswer =
+      awaitingCountryName && ChatContextSelector.isCountryLikeAnswer(userPrompt)
+    if (awaitingCountryName && !isCountryAnswer) {
+      // The user moved on to something else; stop waiting for a country.
+      awaitingCountryName = false
+    }
     val selection =
       if (AssistantImageBridge.attachment.value != null) {
         ChatContextSelection(
@@ -398,6 +416,14 @@ class BillChatViewModel(
           allBills,
           allBills,
           "جارٍ تحليل بيانات الفواتير وإعداد الإجابة...",
+        )
+      } else if (isCountryAnswer) {
+        ChatContextSelection(
+          ChatContextMode.CURRENCY,
+          emptyList(),
+          emptyList(),
+          emptyList(),
+          "جارٍ تجهيز إعداد العملة...",
         )
       } else {
         ChatContextSelector.select(userPrompt, categories, allBills, pendingCurrencyProposal)
@@ -474,6 +500,7 @@ class BillChatViewModel(
       "resolve_by_residence" -> {
         // A new resolve supersedes any older pending proposal.
         pendingCurrencyProposal = null
+        awaitingCountryName = false
         IpLocationResolver.resolveCountryName()
           .onSuccess { countryDisplay ->
             executeCurrencyDeterminationTurn(
@@ -487,6 +514,7 @@ class BillChatViewModel(
             postAssistantMessage(
               "تعذّر تحديد محل إقامتك من الشبكة حاليًا. أخبرني باسم الدولة التي تقيم فيها وسأضبط عملتها لك.",
             )
+            awaitingCountryName = true
           }
       }
       "propose_currency" -> {
@@ -494,6 +522,7 @@ class BillChatViewModel(
         val symbol = dto.currencySymbol.trim()
         if (label.isNotBlank() && symbol.isNotBlank()) {
           pendingCurrencyProposal = CurrencyProposal(currencyLabel = label, symbol = symbol)
+          awaitingCountryName = false
           postAssistantMessage(
             "تم تحديد العملة المحلية: $label ($symbol). هل أغيّر العملة الافتراضية لفواتيرك إلى $symbol؟",
           )
@@ -520,6 +549,7 @@ class BillChatViewModel(
       }
       "cancel_currency_change" -> {
         pendingCurrencyProposal = null
+        awaitingCountryName = false
       }
     }
   }
@@ -566,6 +596,7 @@ class BillChatViewModel(
           val label = dto.currencyLabel.trim()
           val symbol = dto.currencySymbol.trim()
           pendingCurrencyProposal = CurrencyProposal(currencyLabel = label, symbol = symbol)
+          awaitingCountryName = false
           postAssistantMessage(
             "محل إقامتك حسب الشبكة هو $countryDisplay، والعملة المحلية هي $label ($symbol). هل أغيّر العملة الافتراضية لفواتيرك إلى $symbol؟",
           )
@@ -573,6 +604,7 @@ class BillChatViewModel(
           postAssistantMessage(
             "تعذّر تحديد العملة من محل إقامتك. أخبرني باسم الدولة التي تقيم فيها وسأضبط عملتها لك.",
           )
+          awaitingCountryName = true
         }
       }
       .onFailure {

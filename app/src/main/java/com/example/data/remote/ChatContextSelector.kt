@@ -127,6 +127,26 @@ object ChatContextSelector {
       (trimmed.length <= 30 && (trimmed.startsWith("نعم ") || trimmed.startsWith("موافق ")))
   }
 
+  /**
+   * Whether a message looks like a country name given after the app asked
+   * for one (for example "قطر" or "أقيم في مصر"): short, and not a bill
+   * question, a statistic, a help question, or a confirmation/refusal.
+   * Used only while the app is awaiting a country name; anything else
+   * clears that wait and is classified normally.
+   */
+  fun isCountryLikeAnswer(prompt: String): Boolean {
+    val normalized = normalize(prompt).trim()
+    if (normalized.isBlank()) return false
+    if (normalized.split(" ").size > 5) return false
+    if (isConfirmationPrompt(normalized)) return false
+    if (normalized in REFUSE_WORDS) return false
+    if (BILL_TOKENS.any { normalized.contains(it) }) return false
+    if (ANALYTICS_KEYWORDS.any { normalized.contains(it) }) return false
+    if (HELP_KEYWORDS.any { normalized.contains(it) }) return false
+    if (normalized.contains("فواتيري") || normalized.contains("كل الفواتير")) return false
+    return true
+  }
+
   fun select(
     userPrompt: String,
     categories: List<BillCategory>,

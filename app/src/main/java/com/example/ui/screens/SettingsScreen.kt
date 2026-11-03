@@ -130,6 +130,7 @@ private fun SettingsHubScreen(
 ) {
   val context = LocalContext.current
   var preferredCurrency by remember { mutableStateOf(CurrencyPreferenceStore.getCurrency(context)) }
+  var currencyManual by remember { mutableStateOf(CurrencyPreferenceStore.isManuallySet(context)) }
   var showCurrencyDialog by remember { mutableStateOf(false) }
   var pendingExportJson by remember { mutableStateOf<String?>(null) }
   val exportLauncher =
@@ -211,10 +212,17 @@ private fun SettingsHubScreen(
     if (showCurrencyDialog) {
       CurrencyPickerDialog(
         current = preferredCurrency,
+        manual = currencyManual,
         onDismiss = { showCurrencyDialog = false },
         onSave = { chosen ->
           CurrencyPreferenceStore.setCurrency(chosen, context)
           preferredCurrency = CurrencyPreferenceStore.getCurrency(context)
+          currencyManual = true
+          showCurrencyDialog = false
+        },
+        onSaveAuto = {
+          CurrencyPreferenceStore.clearManualChoice(context)
+          currencyManual = false
           showCurrencyDialog = false
         },
       )
@@ -229,7 +237,12 @@ private fun SettingsHubScreen(
         Column(modifier = Modifier.weight(1f)) {
           Text(text = stringResource(R.string.currency_title), style = MaterialTheme.typography.titleMedium)
           Text(
-            text = stringResource(R.string.currency_current, preferredCurrency),
+            text =
+              if (currencyManual) {
+                stringResource(R.string.currency_current, preferredCurrency)
+              } else {
+                stringResource(R.string.currency_auto_current, preferredCurrency)
+              },
             style = MaterialTheme.typography.bodyMedium,
           )
         }
@@ -268,28 +281,55 @@ private fun SettingsHubScreen(
 }
 
 private const val CUSTOM_CURRENCY_OPTION = "__custom__"
+private const val AUTO_CURRENCY_OPTION = "__auto__"
 
 /**
- * Currency picker shown from the Settings hub. The user picks one of the
- * presets or writes a custom symbol; the choice becomes the default
- * currency for newly created bills and for the fallbacks shown when a
- * category has no bills yet. Bills already saved keep their own currency.
+ * Currency picker shown from the Settings hub. The user picks the automatic
+ * mode (the default is then taken from the currency recognized by the next
+ * scan or voice command), one of the presets, or a custom symbol. A manual
+ * choice becomes the default currency for newly created bills and for the
+ * fallbacks shown when a category has no bills yet, and it locks the
+ * default against later automatic detections. Bills already saved keep
+ * their own currency.
  */
 @Composable
 private fun CurrencyPickerDialog(
   current: String,
+  manual: Boolean,
   onDismiss: () -> Unit,
   onSave: (String) -> Unit,
+  onSaveAuto: () -> Unit,
 ) {
   val presets = CurrencyPreferenceStore.PRESET_CURRENCIES
-  var selected by remember { mutableStateOf(if (current in presets) current else CUSTOM_CURRENCY_OPTION) }
-  var customText by remember { mutableStateOf(if (current in presets) "" else current) }
+  var selected by remember {
+    mutableStateOf(
+      if (!manual) {
+        AUTO_CURRENCY_OPTION
+      } else if (current in presets) {
+        current
+      } else {
+        CUSTOM_CURRENCY_OPTION
+      }
+    )
+  }
+  var customText by remember { mutableStateOf(if (manual && current !in presets) current else "") }
   val effective = if (selected == CUSTOM_CURRENCY_OPTION) customText.trim() else selected
   AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text(stringResource(R.string.currency_dialog_title)) },
     text = {
       Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+        Row(
+          modifier =
+            Modifier.fillMaxWidth().clickable { selected = AUTO_CURRENCY_OPTION }.padding(vertical = 4.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          RadioButton(
+            selected = selected == AUTO_CURRENCY_OPTION,
+            onClick = { selected = AUTO_CURRENCY_OPTION },
+          )
+          Text(text = stringResource(R.string.currency_auto_option))
+        }
         presets.forEach { preset ->
           Row(
             modifier = Modifier.fillMaxWidth().clickable { selected = preset }.padding(vertical = 4.dp),
@@ -322,7 +362,16 @@ private fun CurrencyPickerDialog(
       }
     },
     confirmButton = {
-      Button(enabled = effective.isNotBlank(), onClick = { onSave(effective) }) {
+      Button(
+        enabled = selected == AUTO_CURRENCY_OPTION || effective.isNotBlank(),
+        onClick = {
+          if (selected == AUTO_CURRENCY_OPTION) {
+            onSaveAuto()
+          } else {
+            onSave(effective)
+          }
+        },
+      ) {
         Text(stringResource(R.string.action_save))
       }
     },

@@ -17,6 +17,13 @@ import kotlinx.coroutines.flow.asStateFlow
  * The factory default is the Egyptian pound. The user can change it in
  * Settings at any time; the change applies to future bills immediately
  * through [currencyFlow].
+ *
+ * Automatic detection: when a scan (image or voice) recognizes a currency
+ * and the user has never picked one manually, [autoSetCurrency] adopts the
+ * recognized currency as the new default. The moment the user picks a
+ * currency in Settings, that manual choice locks the default: later
+ * recognitions no longer change it. Choosing the automatic option in
+ * Settings clears the lock and re-enables detection.
  */
 object CurrencyPreferenceStore {
   const val DEFAULT_CURRENCY = "ج.م"
@@ -41,6 +48,7 @@ object CurrencyPreferenceStore {
 
   private const val PREFS_NAME = "homebill_prefs"
   private const val KEY_CURRENCY = "preferred_currency"
+  private const val KEY_MANUAL = "preferred_currency_manual"
 
   @Volatile
   private var appContext: Context? = null
@@ -72,10 +80,41 @@ object CurrencyPreferenceStore {
     return _currencyFlow.value
   }
 
-  fun setCurrency(value: String, context: Context? = null) {
+  /** True once the user has picked a currency in Settings. */
+  fun isManuallySet(context: Context? = null): Boolean {
+    if (context != null) {
+      init(context)
+    }
+    return prefs(context)?.getBoolean(KEY_MANUAL, false) ?: false
+  }
+
+  /**
+   * Manual choice from Settings. This locks the default: later automatic
+   * detections no longer change it until the user re-enables automatic mode.
+   */
+  fun setCurrency(value: String, context: Context? = null, manual: Boolean = true) {
     val cleaned = value.trim().take(MAX_CURRENCY_LENGTH)
     if (cleaned.isBlank()) return
+    prefs(context)?.edit()?.putString(KEY_CURRENCY, cleaned)?.putBoolean(KEY_MANUAL, manual)?.apply()
+    _currencyFlow.value = cleaned
+  }
+
+  /**
+   * Adopts a currency recognized by a scan (image or voice) as the new
+   * default, but only while the user has never picked one manually. A
+   * manual choice always wins over recognition; this call is a no-op then.
+   * It never rewrites any saved bill, only the default for future bills.
+   */
+  fun autoSetCurrency(value: String, context: Context? = null) {
+    if (isManuallySet(context)) return
+    val cleaned = value.trim().take(MAX_CURRENCY_LENGTH)
+    if (cleaned.isBlank() || cleaned == _currencyFlow.value) return
     prefs(context)?.edit()?.putString(KEY_CURRENCY, cleaned)?.apply()
     _currencyFlow.value = cleaned
+  }
+
+  /** Re-enables automatic detection; the current value stays until the next recognition. */
+  fun clearManualChoice(context: Context? = null) {
+    prefs(context)?.edit()?.putBoolean(KEY_MANUAL, false)?.apply()
   }
 }

@@ -167,7 +167,7 @@
 
     <!-- Gemini Bill Assistant Chatbot -->
     <string name="hero_ask_assistant_cta">محادثة المساعد الذكي وتحليل الفواتير</string>
-    <string name="assistant_title">المساعد الذكي للفواتير</string>
+    <string name="assistant_title">المساعد الذكي</string>
     <string name="assistant_live_context_badge">متصل بـ %1$d فاتورة في %2$d أقسام</string>
     <string name="assistant_empty_context_badge">مساعد فواتيري الذكي (Gemini)</string>
     <string name="assistant_clear_chat">محادثة جديدة</string>

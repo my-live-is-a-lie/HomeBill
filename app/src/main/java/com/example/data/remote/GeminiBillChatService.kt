@@ -1,6 +1,7 @@
 package com.example.data.remote
 
 import android.util.Log
+import com.example.data.CurrencyPreferenceStore
 import com.example.data.model.BillCategory
 import com.example.data.model.BillRecord
 import com.example.data.model.UtilityType
@@ -67,6 +68,25 @@ data class BillChatAiReplyDto(
   val chartTitle: String = "",
   val chartBars: List<ChatChartBar> = emptyList(),
   val followUpSuggestions: List<String> = emptyList(),
+  // Currency-setting action requested by the model ("" = none). Only the
+  // values in KNOWN_CURRENCY_ACTIONS are honoured; anything else is dropped
+  // in parseReplySafely, so a hallucinated action can never change a setting.
+  val currencyAction: String = "",
+  // Currency the model determined, used with "propose_currency" only:
+  // currencyLabel is the currency name and country (for example
+  // "جنيه مصري"), currencySymbol is its symbol (for example "ج.م").
+  val currencyLabel: String = "",
+  val currencySymbol: String = "",
+)
+
+/**
+ * A currency the assistant proposed as the new default: its name and
+ * country plus its symbol. The model determines both from its own
+ * knowledge; the app stores no country or currency table for this.
+ */
+data class CurrencyProposal(
+  val currencyLabel: String,
+  val symbol: String,
 )
 
 interface GeminiChatApiService {
@@ -105,6 +125,17 @@ class GeminiBillChatService(
     // Null = the model's own default thinking level. Otherwise "LOW",
     // "MEDIUM" or "HIGH", as chosen per conversation in the model settings.
     thinkingLevel: String? = null,
+    // A currency proposal awaiting the user's confirmation (null = none).
+    // It is shown to the model so a later "yes" can be recognised as
+    // confirmation of this proposal and nothing else.
+    pendingCurrencyProposal: CurrencyProposal? = null,
+    // How much bill data this turn needs (see ChatContextSelector). FULL
+    // preserves the previous behaviour of sending everything.
+    contextMode: ChatContextMode = ChatContextMode.FULL,
+    // Bills printed bill by bill. Defaults to allBills; analytics and
+    // currency turns pass an empty list so only aggregates (or nothing)
+    // are sent. Aggregates in the categories block always use allBills.
+    detailBills: List<BillRecord> = allBills,
   ): Result<BillChatAiReplyDto> =
     withContext(Dispatchers.IO) {
       runCatching {
@@ -119,7 +150,15 @@ class GeminiBillChatService(
         val attachedImageBase64 = AssistantImageBridge.currentAttachmentBase64()
 
         val systemContext =
-          buildSystemInstruction(categories, allBills, analyticsSummary) +
+          buildSystemInstruction(
+            categories,
+            allBills,
+            detailBills,
+            analyticsSummary,
+            CurrencyPreferenceStore.getCurrency(),
+            pendingCurrencyProposal,
+            contextMode,
+          ) +
             if (attachedImageBase64 != null) IMAGE_ATTACHMENT_NOTE else ""
 
         // Keep the latest 14 turns to respect context window limits and keep latency fast
@@ -149,7 +188,12 @@ class GeminiBillChatService(
                 },
             )
 
-        // Use lightweight JSON MIME mode without heavy FSM responseSchema compilation to avoid 503 overload
+        // Use lightweight JSON MIME mode without heavy FSM responseSchema compilation to avoid 503 overload.
+        // JSON mode is kept for every context mode, including MINIMAL:
+        // a null responseMimeType would serialize as an explicit null
+        // (lenientJson keeps explicitNulls on), which the API may reject,
+        // and the saving that matters here is the prompt size, not the
+        // small reply envelope.
         val jsonRequest =
           GeminiChatRequest(
             systemInstruction =
@@ -312,6 +356,10 @@ class GeminiBillChatService(
         chartBars = parsed.chartBars.filter { it.label.isNotBlank() && it.value > 0.0 }.take(8),
         followUpSuggestions =
           parsed.followUpSuggestions.map { it.trim() }.filter { it.isNotBlank() }.take(3),
+        currencyAction =
+          parsed.currencyAction.trim().takeIf { it in KNOWN_CURRENCY_ACTIONS } ?: "",
+        currencyLabel = parsed.currencyLabel.trim().take(60),
+        currencySymbol = parsed.currencySymbol.trim().take(CurrencyPreferenceStore.MAX_CURRENCY_LENGTH),
       )
     }
 
@@ -332,7 +380,11 @@ class GeminiBillChatService(
   private fun buildSystemInstruction(
     categories: List<BillCategory>,
     allBills: List<BillRecord>,
+    detailBills: List<BillRecord>,
     summary: MonthlyAnalyticsSummary,
+    currentDefaultCurrency: String,
+    pendingCurrencyProposal: CurrencyProposal?,
+    contextMode: ChatContextMode,
   ): String = buildString {
     appendLine("أنت «مساعد فواتيري الذكي» (مدعوم بـ Gemini)، مستشار مالي وتحليلي خبير داخل تطبيق أندرويد «فواتيري» لإدارة الفواتير المنزلية.")
     appendLine("مهمتك الأساسية:")
@@ -345,11 +397,31 @@ class GeminiBillChatService(
     appendLine("   - ميزة الـ Sheet والتصدير: كل فاتورة تحتوي على جدول بنود تفصيلي (Sheet) يمكن استعراضه ومقارنته بنداً ببند مع الفاتورة السابقة وتصديره كملف CSV متوافق مع Excel وGoogle Sheets.")
     appendLine("   - تبويب «الإحصائيات»: يعرض مخطط الأعمدة الشهري المكدس، ومخطط التوزيع الدائري للمرافق، ومنحنى تتبع التكلفة والاستهلاك لكل فئة.")
     appendLine("5) أعد الإجابة دائماً ككائن JSON صالح واحد فقط بالهيكل التالي دون نص خارجي:")
-    appendLine("""{"replyText":"الشرح بالعربية مع نقاط • واضحة وبدون **","highlights":[{"label":"عنوان المؤشر","value":"القيمة","trend":"+0%"}],"chartTitle":"عنوان الرسم البياني أو نص فارغ","chartBars":[{"label":"البند","value":120.5,"unit":"ر.س"}],"followUpSuggestions":["سؤال مقترح 1","سؤال مقترح 2"]}""")
+    appendLine("""{"replyText":"الشرح بالعربية مع نقاط • واضحة وبدون **","highlights":[{"label":"عنوان المؤشر","value":"القيمة","trend":"+0%"}],"chartTitle":"عنوان الرسم البياني أو نص فارغ","chartBars":[{"label":"البند","value":120.5,"unit":"ر.س"}],"followUpSuggestions":["سؤال مقترح 1","سؤال مقترح 2"],"currencyAction":"","currencyLabel":"","currencySymbol":""}""")
     appendLine()
+    if (contextMode != ChatContextMode.MINIMAL) {
+      appendLine("=== تغيير العملة الافتراضية من المحادثة ===")
+      appendLine("عندما يطلب المستخدم ضبط العملة الافتراضية لفواتيره بناءً على محل إقامته:")
+      appendLine("- إذا لم يذكر دولة بعينها: أجب بجملة قصيرة أنك ستحددها من محل إقامته، واضبط currencyAction على \"resolve_by_residence\"، ولا تدّعِ أن الإعداد تغيّر.")
+      appendLine("- إذا ذكر دولة بعينها، أو إذا أُعطيت لك دولة في الرسالة الحالية (مثل نتيجة تحديد الموقع من عنوان IP): حدّد عملتها المحلية من معرفتك أنت، واضبط currencyAction على \"propose_currency\"، واملأ currencyLabel باسم العملة والدولة وcurrencySymbol برمزها. مثال على الصيغة المطلوبة: (جنيه مصري ج.م).")
+      appendLine("- لا تغيّر أي إعداد أبدًا من تلقاء نفسك، ولا تضبط currencyAction على \"apply_currency_change\" إلا عندما يكون هناك اقتراح معلّق مذكور أدناه ويوافق عليه المستخدم صراحة في رسالته الحالية (نعم، موافق، أكيد...).")
+      appendLine("- عندما يرفض المستخدم الاقتراح المعلّق أو يذكر دولة مختلفة: اضبط currencyAction على \"cancel_currency_change\" (ومع دولة جديدة أعد \"propose_currency\").")
+      appendLine("- عند ضبط أي currencyAction، اجعل replyText جملة قصيرة فقط ولا تدّعِ فيه أن الإعداد تغيّر؛ فالتطبيق هو من يطبّق التغيير ويؤكّده برسالة مستقلة.")
+    }
+    if (pendingCurrencyProposal != null && contextMode != ChatContextMode.MINIMAL) {
+      appendLine()
+      appendLine("=== اقتراح عملة معلّق بانتظار تأكيد المستخدم ===")
+      appendLine("- العملة المقترحة: ${pendingCurrencyProposal.currencyLabel} (${pendingCurrencyProposal.symbol})")
+      appendLine("- لا تطبّق هذا الاقتراح إلا إذا وافق المستخدم عليه صراحة في رسالته الحالية؛ أي رد آخر (سؤال، رفض، دولة مختلفة) ليس موافقة.")
+    }
+    appendLine()
+    if (contextMode != ChatContextMode.MINIMAL) {
+      appendLine("- العملة الافتراضية الحالية في الإعدادات: $currentDefaultCurrency")
+    }
 
-    appendLine("=== ملخص بيانات المستخدم الحية في التطبيق الآن ===")
-    appendLine("- العملة الأساسية: ${summary.primaryCurrency}")
+    if (contextMode == ChatContextMode.ANALYTICS || contextMode == ChatContextMode.FULL) {
+      appendLine("=== ملخص بيانات المستخدم الحية في التطبيق الآن ===")
+      appendLine("- العملة الأساسية: ${summary.primaryCurrency}")
     appendLine("- عدد الأقسام المسجلة: ${categories.size}")
     appendLine("- إجمالي عدد الفواتير المسجلة: ${allBills.size}")
     appendLine("- إجمالي الشهر الحالي/الأحدث: ${DateAndFormatUtils.formatMoney(summary.currentMonthTotal)} ${summary.primaryCurrency}")
@@ -385,6 +457,7 @@ class GeminiBillChatService(
         )
       }
     }
+    }
 
     if (categories.isNotEmpty()) {
       appendLine()
@@ -400,10 +473,13 @@ class GeminiBillChatService(
       }
     }
 
-    if (allBills.isNotEmpty()) {
+    if (
+      (contextMode == ChatContextMode.FULL || contextMode == ChatContextMode.TARGETED) &&
+        detailBills.isNotEmpty()
+    ) {
       appendLine()
       appendLine("=== سجل الفواتير التفصيلي (الأحدث أولاً، حتى 40 فاتورة) ===")
-      allBills
+      detailBills
         .sortedByDescending { it.billDateEpochMillis }
         .take(40)
         .forEach { bill ->
@@ -419,7 +495,7 @@ class GeminiBillChatService(
             "• [${bill.billDateIso}] قسم «${bill.categoryName}» | المبلغ: ${DateAndFormatUtils.formatMoney(bill.totalAmount)} ${bill.currency} | الاستهلاك: ${DateAndFormatUtils.formatNumber(bill.consumptionValue)} ${bill.consumptionUnit} | القراءات: (${DateAndFormatUtils.formatNumber(bill.previousReading)} -> ${DateAndFormatUtils.formatNumber(bill.currentReading)}) | الجهة: ${bill.providerName.ifBlank { "—" }} | بنود الـ Sheet: [$sheetPreview]"
           )
         }
-    } else {
+    } else if (contextMode == ChatContextMode.FULL && allBills.isEmpty()) {
       appendLine()
       appendLine(
         "ملاحظة: المستخدم لم يسجل أي فواتير بعد؛ إذا سأل عن بياناته شجعه بلطف على إنشاء قسم أو مسح فاتورة بالكاميرا، مع الإجابة الكاملة عن أي استفسار حول التطبيق أو نصائح إدارة الفواتير."
@@ -429,6 +505,15 @@ class GeminiBillChatService(
 
   companion object {
     private const val TAG = "GeminiBillChat"
+
+    // The only currency actions the app honours from a model reply.
+    private val KNOWN_CURRENCY_ACTIONS =
+      setOf(
+        "resolve_by_residence",
+        "propose_currency",
+        "apply_currency_change",
+        "cancel_currency_change",
+      )
 
     // Appended to the system instruction when the user sent a bill image to the assistant.
     private const val IMAGE_ATTACHMENT_NOTE =

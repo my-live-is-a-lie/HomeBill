@@ -168,6 +168,7 @@ fun AuthenticatedAppShell(currentUserId: String) {
   val chatVm: BillChatViewModel = viewModel(key = "chat_$currentUserId")
   val chatMessages by chatVm.messages.collectAsStateWithLifecycle()
   val isChatTyping by chatVm.isTyping.collectAsStateWithLifecycle()
+  val chatTypingLabel by chatVm.typingLabel.collectAsStateWithLifecycle()
   val chatConversations by chatVm.conversations.collectAsStateWithLifecycle()
   val isTemporaryChat by chatVm.isTemporaryChat.collectAsStateWithLifecycle()
   val activeChatConversation by chatVm.activeConversation.collectAsStateWithLifecycle()
@@ -503,6 +504,7 @@ fun AuthenticatedAppShell(currentUserId: String) {
               BillAssistantScreen(
                 messages = chatMessages,
                 isTyping = isChatTyping,
+                typingLabel = chatTypingLabel,
                 categories = categories,
                 allBills = allBills,
                 analyticsSummary = analyticsSummary,

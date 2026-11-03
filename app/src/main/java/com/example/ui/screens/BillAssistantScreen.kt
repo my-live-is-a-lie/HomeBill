@@ -179,6 +179,7 @@ private data class DictationUndo(val before: String, val after: String)
 fun BillAssistantScreen(
   messages: List<BillChatMessage>,
   isTyping: Boolean,
+  typingLabel: String = "",
   categories: List<BillCategory>,
   allBills: List<BillRecord>,
   analyticsSummary: MonthlyAnalyticsSummary,
@@ -1969,7 +1970,7 @@ private fun TypingIndicatorCard() {
       )
       Spacer(modifier = Modifier.width(12.dp))
       Text(
-        text = stringResource(R.string.assistant_typing),
+        text = typingLabel.ifBlank { stringResource(R.string.assistant_typing) },
         style = MaterialTheme.typography.bodyMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
       )

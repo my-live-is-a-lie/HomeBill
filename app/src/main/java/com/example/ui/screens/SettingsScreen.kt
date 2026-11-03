@@ -229,7 +229,11 @@ private fun SettingsHubScreen(
         Column(modifier = Modifier.weight(1f)) {
           Text(text = stringResource(R.string.currency_title), style = MaterialTheme.typography.titleMedium)
           Text(
-            text = stringResource(R.string.currency_current, preferredCurrency),
+            text =
+              stringResource(
+                R.string.currency_current,
+                CurrencyPreferenceStore.displayCurrency(preferredCurrency, context),
+              ),
             style = MaterialTheme.typography.bodyMedium,
           )
         }
@@ -267,15 +271,15 @@ private fun SettingsHubScreen(
   }
 }
 
-private const val CUSTOM_CURRENCY_OPTION = "__custom__"
-
 /**
- * Currency picker shown from the Settings hub. The user picks one of the
- * presets or writes a custom symbol; the choice becomes the default
- * currency for newly created bills and for the fallbacks shown when a
- * category has no bills yet. There is no lock: a later scan or voice
- * command that recognizes a currency determines a new default. Bills
- * already saved keep their own currency.
+ * Currency picker shown from the Settings hub. The list holds only
+ * currencies the user added: each row shows its name (currency and
+ * country) beside its symbol, for example "جنيه مصري ج.م". The list
+ * starts empty; the add form below it takes a name and a symbol. The
+ * chosen row becomes the default currency for newly created bills and
+ * for the fallbacks shown when a category has no bills yet. There is no
+ * lock: a later scan or voice command that recognizes a currency
+ * determines a new default. Bills already saved keep their own currency.
  */
 @Composable
 private fun CurrencyPickerDialog(
@@ -283,48 +287,110 @@ private fun CurrencyPickerDialog(
   onDismiss: () -> Unit,
   onSave: (String) -> Unit,
 ) {
-  val presets = CurrencyPreferenceStore.PRESET_CURRENCIES
-  var selected by remember { mutableStateOf(if (current in presets) current else CUSTOM_CURRENCY_OPTION) }
-  var customText by remember { mutableStateOf(if (current in presets) "" else current) }
-  val effective = if (selected == CUSTOM_CURRENCY_OPTION) customText.trim() else selected
+  val context = LocalContext.current
+  var currencies by remember { mutableStateOf(CurrencyPreferenceStore.getCurrencies(context)) }
+  var selected by remember { mutableStateOf(current) }
+  var showAddForm by remember { mutableStateOf(false) }
+  var newLabel by remember { mutableStateOf("") }
+  var newSymbol by remember { mutableStateOf("") }
+  val canAdd =
+    newLabel.isNotBlank() &&
+      newSymbol.isNotBlank() &&
+      currencies.none { it.symbol == newSymbol.trim() }
   AlertDialog(
     onDismissRequest = onDismiss,
     title = { Text(stringResource(R.string.currency_dialog_title)) },
     text = {
       Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-        presets.forEach { preset ->
-          Row(
-            modifier = Modifier.fillMaxWidth().clickable { selected = preset }.padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-          ) {
-            RadioButton(selected = selected == preset, onClick = { selected = preset })
-            Text(text = preset)
+        if (currencies.isEmpty()) {
+          Text(
+            text = stringResource(R.string.currency_empty),
+            style = MaterialTheme.typography.bodyMedium,
+          )
+        } else {
+          currencies.forEach { currency ->
+            Row(
+              modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              RadioButton(
+                selected = selected == currency.symbol,
+                onClick = { selected = currency.symbol },
+              )
+              Text(
+                text = "${currency.label} ${currency.symbol}",
+                modifier = Modifier.weight(1f).clickable { selected = currency.symbol },
+              )
+              IconButton(
+                onClick = {
+                  if (CurrencyPreferenceStore.removeCurrency(currency.symbol, context)) {
+                    currencies = CurrencyPreferenceStore.getCurrencies(context)
+                  }
+                },
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Delete,
+                  contentDescription = stringResource(R.string.currency_delete),
+                )
+              }
+            }
           }
         }
-        Row(
-          modifier =
-            Modifier.fillMaxWidth().clickable { selected = CUSTOM_CURRENCY_OPTION }.padding(vertical = 4.dp),
-          verticalAlignment = Alignment.CenterVertically,
-        ) {
-          RadioButton(
-            selected = selected == CUSTOM_CURRENCY_OPTION,
-            onClick = { selected = CUSTOM_CURRENCY_OPTION },
-          )
-          Text(text = stringResource(R.string.currency_custom_option))
-        }
-        if (selected == CUSTOM_CURRENCY_OPTION) {
+        if (showAddForm) {
           OutlinedTextField(
-            value = customText,
-            onValueChange = { customText = it.take(CurrencyPreferenceStore.MAX_CURRENCY_LENGTH) },
-            label = { Text(stringResource(R.string.currency_custom_hint)) },
+            value = newLabel,
+            onValueChange = { newLabel = it.take(CurrencyPreferenceStore.MAX_LABEL_LENGTH) },
+            label = { Text(stringResource(R.string.currency_label_hint)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+          )
+          OutlinedTextField(
+            value = newSymbol,
+            onValueChange = { newSymbol = it.take(CurrencyPreferenceStore.MAX_CURRENCY_LENGTH) },
+            label = { Text(stringResource(R.string.currency_symbol_hint)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
           )
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 8.dp),
+          ) {
+            Button(
+              enabled = canAdd,
+              onClick = {
+                if (CurrencyPreferenceStore.addCurrency(newLabel, newSymbol, context)) {
+                  currencies = CurrencyPreferenceStore.getCurrencies(context)
+                  selected = newSymbol.trim()
+                  newLabel = ""
+                  newSymbol = ""
+                  showAddForm = false
+                }
+              },
+            ) {
+              Text(stringResource(R.string.currency_add_action))
+            }
+            TextButton(
+              onClick = {
+                showAddForm = false
+                newLabel = ""
+                newSymbol = ""
+              },
+            ) {
+              Text(stringResource(R.string.action_cancel))
+            }
+          }
+        } else {
+          OutlinedButton(
+            onClick = { showAddForm = true },
+            modifier = Modifier.padding(top = 12.dp),
+          ) {
+            Text(stringResource(R.string.currency_add_new))
+          }
         }
       }
     },
     confirmButton = {
-      Button(enabled = effective.isNotBlank(), onClick = { onSave(effective) }) {
+      Button(enabled = selected.isNotBlank(), onClick = { onSave(selected) }) {
         Text(stringResource(R.string.action_save))
       }
     },

@@ -333,14 +333,15 @@ class BillChatViewModel(
     updateActiveMessages(cleanedMessages + userMessage, newUserPrompt = trimmed)
     if (!isDraftActive()) persist()
 
-    // A short confirmation while a currency proposal is pending is applied
-    // here, by the app itself, instead of depending on the model returning
-    // the exact apply action: a model that merely claims the change in
-    // words must never be the only thing standing between "yes" and the
-    // setting actually changing. The applied currency is also added to the
-    // user's currency list, so it shows up selected in Settings.
+    // A confirmation or explicit add/set instruction while a currency
+    // proposal is pending is applied here, by the app itself, instead of
+    // depending on the model returning the exact apply action: a model
+    // that merely claims the change in words must never be the only thing
+    // standing between "yes" and the setting actually changing. The
+    // applied currency is also added to the user's currency list, so it
+    // shows up selected in Settings.
     val pendingProposal = pendingCurrencyProposal
-    if (pendingProposal != null && ChatContextSelector.isConfirmationPrompt(trimmed)) {
+    if (pendingProposal != null && ChatContextSelector.isCurrencyApplyIntent(trimmed)) {
       pendingCurrencyProposal = null
       CurrencyPreferenceStore.addCurrency(pendingProposal.currencyLabel, pendingProposal.symbol)
       CurrencyPreferenceStore.setCurrency(pendingProposal.symbol)
@@ -461,6 +462,19 @@ class BillChatViewModel(
             )
           updateActiveMessages(_messages.value + aiMsg)
           handleCurrencyAction(dto, categories, allBills, analyticsSummary)
+          // Safety net: a currency turn whose model text claims a change
+          // or addition but carries no action must never stand
+          // uncorrected — the user reads the claim as done. The
+          // correction states the actual current default from the store.
+          if (
+            selection.mode == ChatContextMode.CURRENCY &&
+              dto.currencyAction.isBlank() &&
+              ChatContextSelector.claimsCurrencyChange(dto.replyText)
+          ) {
+            postAssistantMessage(
+              "تنبيه: لم يتم تغيير العملة الافتراضية حتى الآن؛ العملة الحالية هي ${CurrencyPreferenceStore.getCurrency()}. لإتمام التغيير، أجب على سؤال التأكيد أو اطلب مني تحديد العملة من جديد.",
+            )
+          }
           if (isDraftActive()) {
             promoteDraft()
           } else {
@@ -525,6 +539,10 @@ class BillChatViewModel(
           awaitingCountryName = false
           postAssistantMessage(
             "تم تحديد العملة المحلية: $label ($symbol). هل أغيّر العملة الافتراضية لفواتيرك إلى $symbol؟",
+            // Quick-action buttons: tapping one sends it as the user's
+            // reply, so confirming no longer requires typing. "نعم" is
+            // applied locally (pending proposal), "لا" cancels it.
+            listOf("نعم", "لا"),
           )
         }
         // Blank label or symbol: ignore. A proposal without both parts is unusable.
@@ -599,6 +617,8 @@ class BillChatViewModel(
           awaitingCountryName = false
           postAssistantMessage(
             "محل إقامتك حسب الشبكة هو $countryDisplay، والعملة المحلية هي $label ($symbol). هل أغيّر العملة الافتراضية لفواتيرك إلى $symbol؟",
+            // Same quick-action buttons as the propose branch above.
+            listOf("نعم", "لا"),
           )
         } else {
           postAssistantMessage(
@@ -614,8 +634,10 @@ class BillChatViewModel(
       }
   }
 
-  private fun postAssistantMessage(text: String) {
-    updateActiveMessages(_messages.value + BillChatMessage(isUser = false, text = text))
+  private fun postAssistantMessage(text: String, suggestions: List<String> = emptyList()) {
+    updateActiveMessages(
+      _messages.value + BillChatMessage(isUser = false, text = text, followUpSuggestions = suggestions),
+    )
   }
 
   fun clearConversation() {

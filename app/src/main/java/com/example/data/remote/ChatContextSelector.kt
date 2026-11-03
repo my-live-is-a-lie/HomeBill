@@ -128,6 +128,43 @@ object ChatContextSelector {
   }
 
   /**
+   * Whether a message, sent while a currency proposal is pending, should
+   * apply that proposal directly in the app instead of going to the model.
+   * The first word must be a confirmation or an explicit add/set word
+   * ("نعم", "أضفها", "عيّنها", ...). Word-matched, not substring, so
+   * "التطبيق" never matches "طبّق". Guarded by: no bill words (adding a
+   * bill is not confirming a currency), no refusal word, no question
+   * mark, short text.
+   */
+  fun isCurrencyApplyIntent(prompt: String): Boolean {
+    val cleaned = normalize(prompt).filter { it !in setOf('،', ',', '.', '؟', '?', '!', ':') }.trim()
+    if (cleaned.isBlank() || cleaned.length > 40) return false
+    if (BILL_TOKENS.any { cleaned.contains(it) }) return false
+    val words = cleaned.split(" ").filter { it.isNotBlank() }
+    if (words.any { it == "لا" }) return false
+    val applyWords =
+      setOf(
+        "نعم", "موافق", "اكيد", "تمام", "ايوه", "اي", "اوافق", "حسنا", "طيب",
+        "اضف", "اضفها", "عين", "عينها", "غير", "غيرها", "طبق", "طبقها",
+        "نفذ", "نفذها", "ثبت", "ثبتها",
+      )
+    return words.firstOrNull() in applyWords
+  }
+
+  /** Whether model prose claims a currency change or addition was completed. */
+  fun claimsCurrencyChange(replyText: String): Boolean {
+    val normalized = normalize(replyText)
+    return normalized.contains("تم تحديد") ||
+      normalized.contains("تم تعيين") ||
+      normalized.contains("تم تغيير") ||
+      normalized.contains("تمت اضافه") ||
+      normalized.contains("تم اضافه") ||
+      normalized.contains("قمت باضافه") ||
+      normalized.contains("قمت بتعيين") ||
+      normalized.contains("قمت بتغيير")
+  }
+
+  /**
    * Whether a message looks like a country name given after the app asked
    * for one (for example "قطر" or "أقيم في مصر"): short, and not a bill
    * question, a statistic, a help question, or a confirmation/refusal.

@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
@@ -57,6 +58,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -74,6 +76,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -88,6 +91,8 @@ import com.example.ui.theme.ThemeSettingsStore
 import com.example.ui.viewmodel.ChatImportResult
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import com.example.R
+import com.example.data.CurrencyPreferenceStore
 import com.example.data.remote.UserGeminiKeyStore
 import kotlinx.coroutines.launch
 
@@ -124,6 +129,8 @@ private fun SettingsHubScreen(
   onImportChats: (String) -> ChatImportResult,
 ) {
   val context = LocalContext.current
+  var preferredCurrency by remember { mutableStateOf(CurrencyPreferenceStore.getCurrency(context)) }
+  var showCurrencyDialog by remember { mutableStateOf(false) }
   var pendingExportJson by remember { mutableStateOf<String?>(null) }
   val exportLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -201,6 +208,33 @@ private fun SettingsHubScreen(
         }
       }
     }
+    if (showCurrencyDialog) {
+      CurrencyPickerDialog(
+        current = preferredCurrency,
+        onDismiss = { showCurrencyDialog = false },
+        onSave = { chosen ->
+          CurrencyPreferenceStore.setCurrency(chosen, context)
+          preferredCurrency = CurrencyPreferenceStore.getCurrency(context)
+          showCurrencyDialog = false
+        },
+      )
+    }
+    Card(onClick = { showCurrencyDialog = true }, modifier = Modifier.fillMaxWidth()) {
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Icon(imageVector = Icons.Default.AttachMoney, contentDescription = null)
+        Column(modifier = Modifier.weight(1f)) {
+          Text(text = stringResource(R.string.currency_title), style = MaterialTheme.typography.titleMedium)
+          Text(
+            text = stringResource(R.string.currency_current, preferredCurrency),
+            style = MaterialTheme.typography.bodyMedium,
+          )
+        }
+      }
+    }
     Card(modifier = Modifier.fillMaxWidth()) {
       Column(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -231,6 +265,71 @@ private fun SettingsHubScreen(
       }
     }
   }
+}
+
+private const val CUSTOM_CURRENCY_OPTION = "__custom__"
+
+/**
+ * Currency picker shown from the Settings hub. The user picks one of the
+ * presets or writes a custom symbol; the choice becomes the default
+ * currency for newly created bills and for the fallbacks shown when a
+ * category has no bills yet. Bills already saved keep their own currency.
+ */
+@Composable
+private fun CurrencyPickerDialog(
+  current: String,
+  onDismiss: () -> Unit,
+  onSave: (String) -> Unit,
+) {
+  val presets = CurrencyPreferenceStore.PRESET_CURRENCIES
+  var selected by remember { mutableStateOf(if (current in presets) current else CUSTOM_CURRENCY_OPTION) }
+  var customText by remember { mutableStateOf(if (current in presets) "" else current) }
+  val effective = if (selected == CUSTOM_CURRENCY_OPTION) customText.trim() else selected
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(stringResource(R.string.currency_dialog_title)) },
+    text = {
+      Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+        presets.forEach { preset ->
+          Row(
+            modifier = Modifier.fillMaxWidth().clickable { selected = preset }.padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+          ) {
+            RadioButton(selected = selected == preset, onClick = { selected = preset })
+            Text(text = preset)
+          }
+        }
+        Row(
+          modifier =
+            Modifier.fillMaxWidth().clickable { selected = CUSTOM_CURRENCY_OPTION }.padding(vertical = 4.dp),
+          verticalAlignment = Alignment.CenterVertically,
+        ) {
+          RadioButton(
+            selected = selected == CUSTOM_CURRENCY_OPTION,
+            onClick = { selected = CUSTOM_CURRENCY_OPTION },
+          )
+          Text(text = stringResource(R.string.currency_custom_option))
+        }
+        if (selected == CUSTOM_CURRENCY_OPTION) {
+          OutlinedTextField(
+            value = customText,
+            onValueChange = { customText = it.take(CurrencyPreferenceStore.MAX_CURRENCY_LENGTH) },
+            label = { Text(stringResource(R.string.currency_custom_hint)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+          )
+        }
+      }
+    },
+    confirmButton = {
+      Button(enabled = effective.isNotBlank(), onClick = { onSave(effective) }) {
+        Text(stringResource(R.string.action_save))
+      }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+    },
+  )
 }
 
 /**

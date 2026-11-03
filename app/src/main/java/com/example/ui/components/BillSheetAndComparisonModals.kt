@@ -906,6 +906,7 @@ fun BillFormBottomSheet(
   currentUserId: String,
   onDismiss: () -> Unit,
   onSaveBill: (BillRecord) -> Unit,
+  preferredCurrency: String = "ر.س",
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   var billDateIso by
@@ -921,7 +922,7 @@ fun BillFormBottomSheet(
     remember(existingBill) {
       mutableStateOf(existingBill?.totalAmount?.let { DateAndFormatUtils.formatNumber(it) } ?: "")
     }
-  var currency by remember(existingBill) { mutableStateOf(existingBill?.currency ?: "ر.س") }
+  var currency by remember(existingBill) { mutableStateOf(existingBill?.currency ?: preferredCurrency) }
   var prevReadingText by
     remember(existingBill) {
       mutableStateOf(

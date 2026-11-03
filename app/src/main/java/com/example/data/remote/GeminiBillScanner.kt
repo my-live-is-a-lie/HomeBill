@@ -55,17 +55,24 @@ class GeminiBillScanner(
   /**
    * Scans a captured [Bitmap] and maps the structured JSON result into an editable [ScannedBillDraft].
    */
-  suspend fun scanBillBitmap(bitmap: Bitmap): Result<ScannedBillDraft> =
+  suspend fun scanBillBitmap(
+    bitmap: Bitmap,
+    defaultCurrency: String = "ر.س",
+  ): Result<ScannedBillDraft> =
     apiClient.extractBillFromBitmap(bitmap).map { result ->
-      mapJsonResultToDraft(result)
+      mapJsonResultToDraft(result, defaultCurrency)
     }
 
   /**
    * Scans a captured or picked image [Uri] and maps the structured JSON result into an editable [ScannedBillDraft].
    */
-  suspend fun scanBillImage(context: Context, imageUri: Uri): Result<ScannedBillDraft> =
+  suspend fun scanBillImage(
+    context: Context,
+    imageUri: Uri,
+    defaultCurrency: String = "ر.س",
+  ): Result<ScannedBillDraft> =
     apiClient.extractBillFromUri(context, imageUri).map { result ->
-      mapJsonResultToDraft(result)
+      mapJsonResultToDraft(result, defaultCurrency)
     }
 
   /**
@@ -131,7 +138,10 @@ class GeminiBillScanner(
       }
   }
 
-  internal fun mapJsonResultToDraft(result: ScannedBillJsonResult): ScannedBillDraft {
+  internal fun mapJsonResultToDraft(
+    result: ScannedBillJsonResult,
+    defaultCurrency: String = "ر.س",
+  ): ScannedBillDraft {
     val dto = result.data
     val cleanStoreName = dto.resolvedStoreName.take(120)
 
@@ -198,7 +208,7 @@ class GeminiBillScanner(
       } else {
         rawUnit
       }
-    val currency = dto.currency.trim().ifBlank { "ر.س" }
+    val currency = dto.currency.trim().ifBlank { defaultCurrency }
     val cleanTotal = dto.totalAmount.coerceAtLeast(0.0)
     val cleanTax = dto.taxAmount.coerceAtLeast(0.0)
     val cleanSubtotal = dto.subtotalAmount.coerceAtLeast(0.0)

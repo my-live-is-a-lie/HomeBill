@@ -102,6 +102,7 @@ fun CategoryDetailScreen(
   onStartBillConsumption: (BillRecord) -> Unit = {},
   onEndBillConsumption: (BillRecord) -> Unit = {},
   onUndoBillConsumptionEnd: (BillRecord) -> Unit = {},
+  preferredCurrency: String = "ر.س",
 ) {
   val context = LocalContext.current
   var showAddOrEditBill by remember { mutableStateOf(false) }
@@ -169,6 +170,7 @@ fun CategoryDetailScreen(
         showAddOrEditBill = false
         editingBill = null
       },
+      preferredCurrency = preferredCurrency,
       onSaveBill = { bill ->
         showAddOrEditBill = false
         editingBill = null
@@ -319,7 +321,7 @@ fun CategoryDetailScreen(
           val avgAmount =
             if (categoryBills.isNotEmpty()) categoryBills.map { it.totalAmount }.average() else 0.0
           val latest = categoryBills.firstOrNull()
-          val currency = latest?.currency ?: "ر.س"
+          val currency = latest?.currency ?: preferredCurrency
 
           Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -497,7 +499,7 @@ fun CategoryDetailScreen(
                 Spacer(modifier = Modifier.height(10.dp))
                 val unitOrCurr =
                   if (chartShowConsumption) category.defaultUnit
-                  else (categoryBills.firstOrNull()?.currency ?: "ر.س")
+                  else (categoryBills.firstOrNull()?.currency ?: preferredCurrency)
                 CategorySmoothTrendChart(
                   points = trendPoints,
                   showConsumption = chartShowConsumption,

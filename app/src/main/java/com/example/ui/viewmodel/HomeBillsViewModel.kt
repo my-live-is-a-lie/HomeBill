@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.R
+import com.example.data.CurrencyPreferenceStore
 import com.example.data.model.BillCategory
 import com.example.data.model.BillRecord
 import com.example.data.model.BillSheetRow
@@ -432,7 +433,11 @@ class HomeBillsViewModel(
     viewModelScope.launch {
       _scanState.value = ScanUiState.Scanning(imageUri)
       scanner
-        .scanBillImage(context.applicationContext, imageUri)
+        .scanBillImage(
+          context.applicationContext,
+          imageUri,
+          CurrencyPreferenceStore.getCurrency(),
+        )
         .onSuccess { draft ->
           _scanState.value =
             ScanUiState.Extracted(
@@ -459,7 +464,7 @@ class HomeBillsViewModel(
     viewModelScope.launch {
       _scanState.value = ScanUiState.Scanning(previewUri)
       scanner
-        .scanBillBitmap(bitmap)
+        .scanBillBitmap(bitmap, CurrencyPreferenceStore.getCurrency())
         .onSuccess { draft ->
           _scanState.value =
             ScanUiState.Extracted(
@@ -487,7 +492,7 @@ class HomeBillsViewModel(
       _scanState.value = ScanUiState.Scanning(Uri.EMPTY)
       val categoryNames = (categoriesState.value as? UiState.Success)?.data.orEmpty().map { it.name }
       val todayIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
-      val currency = analyticsSummary.value.primaryCurrency.ifBlank { "ر.س" }
+      val currency = CurrencyPreferenceStore.getCurrency()
       textScanner
         .scanBillText(
           spokenText = spokenText,

@@ -56,6 +56,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.example.data.CurrencyPreferenceStore
 import com.example.data.model.UiState
 import com.example.ui.auth.AuthScreen
 import com.example.ui.auth.authStateFlow
@@ -90,6 +91,7 @@ import kotlinx.serialization.Serializable
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     com.example.data.remote.UserGeminiKeyStore.init(this)
+    com.example.data.CurrencyPreferenceStore.init(this)
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     setContent {
@@ -157,6 +159,7 @@ fun AuthenticatedAppShell(currentUserId: String) {
   val searchScope by vm.searchScope.collectAsStateWithLifecycle()
   val analyticsSummary by vm.analyticsSummary.collectAsStateWithLifecycle()
   val budgetDashboardState by vm.budgetDashboardState.collectAsStateWithLifecycle()
+  val preferredCurrency by CurrencyPreferenceStore.currencyFlow.collectAsStateWithLifecycle()
   val scanState by vm.scanState.collectAsStateWithLifecycle()
   val isSaving by vm.isSaving.collectAsStateWithLifecycle()
   val isReclassifying by vm.isReclassifying.collectAsStateWithLifecycle()
@@ -631,6 +634,7 @@ fun AuthenticatedAppShell(currentUserId: String) {
                 onStartBillConsumption = { bill -> vm.markBillConsumptionStarted(bill) },
                 onEndBillConsumption = { bill -> vm.markBillConsumptionEnded(bill) },
                 onUndoBillConsumptionEnd = { bill -> vm.undoBillConsumptionEnded(bill) },
+                preferredCurrency = preferredCurrency,
               )
             }
           }

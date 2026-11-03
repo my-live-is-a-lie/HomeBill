@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="currency_title">العملة</string>
+  <string name="currency_current">العملة الافتراضية للفواتير الجديدة: %1$s</string>
+  <string name="currency_dialog_title">اختر العملة</string>
+  <string name="currency_custom_option">أخرى (اكتبها بنفسك)</string>
+  <string name="currency_custom_hint">رمز العملة</string>
+</resources>

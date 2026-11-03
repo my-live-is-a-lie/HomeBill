@@ -324,6 +324,25 @@ class BillChatViewModel(
     val userMessage = BillChatMessage(isUser = true, text = trimmed, imagePath = attachedImagePath)
     updateActiveMessages(cleanedMessages + userMessage, newUserPrompt = trimmed)
     if (!isDraftActive()) persist()
+
+    // A short confirmation while a currency proposal is pending is applied
+    // here, by the app itself, instead of depending on the model returning
+    // the exact apply action: a model that merely claims the change in
+    // words must never be the only thing standing between "yes" and the
+    // setting actually changing. The applied currency is also added to the
+    // user's currency list, so it shows up selected in Settings.
+    val pendingProposal = pendingCurrencyProposal
+    if (pendingProposal != null && ChatContextSelector.isConfirmationPrompt(trimmed)) {
+      pendingCurrencyProposal = null
+      CurrencyPreferenceStore.addCurrency(pendingProposal.currencyLabel, pendingProposal.symbol)
+      CurrencyPreferenceStore.setCurrency(pendingProposal.symbol)
+      postAssistantMessage(
+        "تم تغيير العملة الافتراضية لفواتيرك إلى ${pendingProposal.currencyLabel} (${pendingProposal.symbol}). ستُستخدم في الفواتير الجديدة التي لا تحمل عملة محددة، وهي الآن موجودة في قائمة العملات بالإعدادات.",
+      )
+      if (!isDraftActive()) persist()
+      return
+    }
+
     executeTurn(
       priorHistory = priorHistory,
       userPrompt = trimmed,
@@ -484,13 +503,20 @@ class BillChatViewModel(
       "apply_currency_change" -> {
         val proposal = pendingCurrencyProposal
         if (proposal != null) {
-          CurrencyPreferenceStore.setCurrency(proposal.symbol)
           pendingCurrencyProposal = null
+          CurrencyPreferenceStore.addCurrency(proposal.currencyLabel, proposal.symbol)
+          CurrencyPreferenceStore.setCurrency(proposal.symbol)
           postAssistantMessage(
-            "تم تغيير العملة الافتراضية لفواتيرك إلى ${proposal.currencyLabel} (${proposal.symbol}). ستُستخدم في الفواتير الجديدة التي لا تحمل عملة محددة.",
+            "تم تغيير العملة الافتراضية لفواتيرك إلى ${proposal.currencyLabel} (${proposal.symbol}). ستُستخدم في الفواتير الجديدة التي لا تحمل عملة محددة، وهي الآن موجودة في قائمة العملات بالإعدادات.",
+          )
+        } else {
+          // The model claimed a change the app never applied (no proposal
+          // was pending): say so explicitly instead of leaving the claim
+          // standing uncorrected.
+          postAssistantMessage(
+            "لم يتم تغيير العملة الافتراضية، لأنه لا يوجد اقتراح معلّق حاليًا. اطلب مني تحديد العملة من جديد وسأعرض عليك الاقتراح للتأكيد قبل أي تغيير.",
           )
         }
-        // No pending proposal: ignore. A bare model claim never changes a setting.
       }
       "cancel_currency_change" -> {
         pendingCurrencyProposal = null

@@ -120,6 +120,13 @@ object ChatContextSelector {
   private val REFUSE_WORDS =
     setOf("لا", "لا اريد", "مش موافق", "الغي", "الغاء", "لا تغير", "بلاش")
 
+  /** Short explicit confirmations ("yes", "agreed") that answer a pending question. */
+  fun isConfirmationPrompt(prompt: String): Boolean {
+    val trimmed = normalize(prompt).trim()
+    return trimmed in CONFIRM_WORDS ||
+      (trimmed.length <= 30 && (trimmed.startsWith("نعم ") || trimmed.startsWith("موافق ")))
+  }
+
   fun select(
     userPrompt: String,
     categories: List<BillCategory>,
@@ -132,9 +139,7 @@ object ChatContextSelector {
     // into currency turns, so the model can return the action fields.
     if (pendingCurrencyProposal != null) {
       val trimmed = prompt.trim()
-      if (trimmed in CONFIRM_WORDS || trimmed in REFUSE_WORDS ||
-        (trimmed.length <= 30 && (trimmed.startsWith("نعم ") || trimmed.startsWith("موافق ")))
-      ) {
+      if (isConfirmationPrompt(prompt) || trimmed in REFUSE_WORDS) {
         return currencySelection()
       }
     }

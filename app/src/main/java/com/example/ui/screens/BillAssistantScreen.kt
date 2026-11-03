@@ -595,7 +595,7 @@ fun BillAssistantScreen(
 
             if (isTyping) {
               item(key = "typing_indicator") {
-                TypingIndicatorCard()
+                TypingIndicatorCard(typingLabel = typingLabel)
               }
             }
           }
@@ -1954,7 +1954,7 @@ private fun ChatInlineBarChartCard(
 }
 
 @Composable
-private fun TypingIndicatorCard() {
+private fun TypingIndicatorCard(typingLabel: String = "") {
   Card(
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     shape = MaterialTheme.shapes.large,

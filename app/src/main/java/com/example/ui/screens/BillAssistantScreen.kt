@@ -9,6 +9,13 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -75,7 +82,6 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
@@ -114,10 +120,12 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -1953,27 +1961,71 @@ private fun ChatInlineBarChartCard(
   }
 }
 
+/**
+ * "The answer is being prepared" indicator, in the style of modern AI chat apps: a pulsing
+ * sparkle next to a label that shimmers (a soft highlight sweeps across the text), instead of a
+ * circular spinner. All three animations run off one infinite transition.
+ */
 @Composable
 private fun TypingIndicatorCard(typingLabel: String = "") {
-  Card(
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    shape = MaterialTheme.shapes.large,
+  val label = typingLabel.ifBlank { stringResource(R.string.assistant_typing) }
+  val transition = rememberInfiniteTransition(label = "typing_indicator")
+
+  // The sparkle breathes: grows and fades in and out.
+  val pulse by
+    transition.animateFloat(
+      initialValue = 0.8f,
+      targetValue = 1.15f,
+      animationSpec =
+        infiniteRepeatable(
+          animation = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+          repeatMode = RepeatMode.Reverse,
+        ),
+      label = "sparkle_pulse",
+    )
+  // A highlight band sweeps across the label from one side to the other, then starts over.
+  val sweep by
+    transition.animateFloat(
+      initialValue = -400f,
+      targetValue = 1400f,
+      animationSpec =
+        infiniteRepeatable(
+          animation = tween(durationMillis = 1700, easing = LinearEasing),
+          repeatMode = RepeatMode.Restart,
+        ),
+      label = "label_shimmer",
+    )
+
+  val baseColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f)
+  val highlightColor = MaterialTheme.colorScheme.onSurface
+  val shimmerBrush =
+    Brush.linearGradient(
+      colors = listOf(baseColor, highlightColor, baseColor),
+      start = Offset(sweep, 0f),
+      end = Offset(sweep + 400f, 0f),
+    )
+  // 0f..1f, used to fade the sparkle together with its size.
+  val pulseFraction = ((pulse - 0.8f) / 0.35f).coerceIn(0f, 1f)
+
+  Row(
+    verticalAlignment = Alignment.CenterVertically,
+    modifier = Modifier.padding(horizontal = 4.dp, vertical = 10.dp).testTag("typing_indicator"),
   ) {
-    Row(
-      verticalAlignment = Alignment.CenterVertically,
-      modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-    ) {
-      CircularProgressIndicator(
-        modifier = Modifier.size(20.dp),
-        strokeWidth = 2.5.dp,
-        color = MaterialTheme.colorScheme.primary,
-      )
-      Spacer(modifier = Modifier.width(12.dp))
-      Text(
-        text = typingLabel.ifBlank { stringResource(R.string.assistant_typing) },
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-    }
+    Icon(
+      imageVector = Icons.Default.AutoAwesome,
+      contentDescription = null,
+      tint = MaterialTheme.colorScheme.primary,
+      modifier =
+        Modifier.size(22.dp).graphicsLayer {
+          scaleX = pulse
+          scaleY = pulse
+          alpha = 0.55f + 0.45f * pulseFraction
+        },
+    )
+    Spacer(modifier = Modifier.width(10.dp))
+    Text(
+      text = label,
+      style = MaterialTheme.typography.bodyMedium.copy(brush = shimmerBrush),
+    )
   }
 }

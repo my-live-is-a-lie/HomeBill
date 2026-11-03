@@ -29,6 +29,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
@@ -57,6 +58,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -74,6 +76,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -88,6 +91,8 @@ import com.example.ui.theme.ThemeSettingsStore
 import com.example.ui.viewmodel.ChatImportResult
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import com.example.R
+import com.example.data.CurrencyPreferenceStore
 import com.example.data.remote.UserGeminiKeyStore
 import kotlinx.coroutines.launch
 
@@ -124,6 +129,8 @@ private fun SettingsHubScreen(
   onImportChats: (String) -> ChatImportResult,
 ) {
   val context = LocalContext.current
+  var preferredCurrency by remember { mutableStateOf(CurrencyPreferenceStore.getCurrency(context)) }
+  var showCurrencyDialog by remember { mutableStateOf(false) }
   var pendingExportJson by remember { mutableStateOf<String?>(null) }
   val exportLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
@@ -201,6 +208,37 @@ private fun SettingsHubScreen(
         }
       }
     }
+    if (showCurrencyDialog) {
+      CurrencyPickerDialog(
+        current = preferredCurrency,
+        onDismiss = { showCurrencyDialog = false },
+        onSave = { chosen ->
+          CurrencyPreferenceStore.setCurrency(chosen, context)
+          preferredCurrency = CurrencyPreferenceStore.getCurrency(context)
+          showCurrencyDialog = false
+        },
+      )
+    }
+    Card(onClick = { showCurrencyDialog = true }, modifier = Modifier.fillMaxWidth()) {
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Icon(imageVector = Icons.Default.AttachMoney, contentDescription = null)
+        Column(modifier = Modifier.weight(1f)) {
+          Text(text = stringResource(R.string.currency_title), style = MaterialTheme.typography.titleMedium)
+          Text(
+            text =
+              stringResource(
+                R.string.currency_current,
+                CurrencyPreferenceStore.displayCurrency(preferredCurrency, context),
+              ),
+            style = MaterialTheme.typography.bodyMedium,
+          )
+        }
+      }
+    }
     Card(modifier = Modifier.fillMaxWidth()) {
       Column(
         modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -231,6 +269,135 @@ private fun SettingsHubScreen(
       }
     }
   }
+}
+
+/**
+ * Currency picker shown from the Settings hub. The list holds only
+ * currencies the user added: each row shows its name (currency and
+ * country) beside its symbol, for example "جنيه مصري ج.م". The list
+ * starts empty; the add form below it takes a name and a symbol. The
+ * chosen row becomes the default currency for newly created bills and
+ * for the fallbacks shown when a category has no bills yet. There is no
+ * lock: a later scan or voice command that recognizes a currency
+ * determines a new default. Bills already saved keep their own currency.
+ */
+@Composable
+private fun CurrencyPickerDialog(
+  current: String,
+  onDismiss: () -> Unit,
+  onSave: (String) -> Unit,
+) {
+  val context = LocalContext.current
+  var currencies by remember { mutableStateOf(CurrencyPreferenceStore.getCurrencies(context)) }
+  var selected by remember { mutableStateOf(current) }
+  var showAddForm by remember { mutableStateOf(false) }
+  var newLabel by remember { mutableStateOf("") }
+  var newSymbol by remember { mutableStateOf("") }
+  val canAdd =
+    newLabel.isNotBlank() &&
+      newSymbol.isNotBlank() &&
+      currencies.none { it.symbol == newSymbol.trim() }
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(stringResource(R.string.currency_dialog_title)) },
+    text = {
+      Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+        if (currencies.isEmpty()) {
+          Text(
+            text = stringResource(R.string.currency_empty),
+            style = MaterialTheme.typography.bodyMedium,
+          )
+        } else {
+          currencies.forEach { currency ->
+            Row(
+              modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+              verticalAlignment = Alignment.CenterVertically,
+            ) {
+              RadioButton(
+                selected = selected == currency.symbol,
+                onClick = { selected = currency.symbol },
+              )
+              Text(
+                text = "${currency.label} ${currency.symbol}",
+                modifier = Modifier.weight(1f).clickable { selected = currency.symbol },
+              )
+              IconButton(
+                onClick = {
+                  if (CurrencyPreferenceStore.removeCurrency(currency.symbol, context)) {
+                    currencies = CurrencyPreferenceStore.getCurrencies(context)
+                  }
+                },
+              ) {
+                Icon(
+                  imageVector = Icons.Default.Delete,
+                  contentDescription = stringResource(R.string.currency_delete),
+                )
+              }
+            }
+          }
+        }
+        if (showAddForm) {
+          OutlinedTextField(
+            value = newLabel,
+            onValueChange = { newLabel = it.take(CurrencyPreferenceStore.MAX_LABEL_LENGTH) },
+            label = { Text(stringResource(R.string.currency_label_hint)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+          )
+          OutlinedTextField(
+            value = newSymbol,
+            onValueChange = { newSymbol = it.take(CurrencyPreferenceStore.MAX_CURRENCY_LENGTH) },
+            label = { Text(stringResource(R.string.currency_symbol_hint)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+          )
+          Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 8.dp),
+          ) {
+            Button(
+              enabled = canAdd,
+              onClick = {
+                if (CurrencyPreferenceStore.addCurrency(newLabel, newSymbol, context)) {
+                  currencies = CurrencyPreferenceStore.getCurrencies(context)
+                  selected = newSymbol.trim()
+                  newLabel = ""
+                  newSymbol = ""
+                  showAddForm = false
+                }
+              },
+            ) {
+              Text(stringResource(R.string.currency_add_action))
+            }
+            TextButton(
+              onClick = {
+                showAddForm = false
+                newLabel = ""
+                newSymbol = ""
+              },
+            ) {
+              Text(stringResource(R.string.action_cancel))
+            }
+          }
+        } else {
+          OutlinedButton(
+            onClick = { showAddForm = true },
+            modifier = Modifier.padding(top = 12.dp),
+          ) {
+            Text(stringResource(R.string.currency_add_new))
+          }
+        }
+      }
+    },
+    confirmButton = {
+      Button(enabled = selected.isNotBlank(), onClick = { onSave(selected) }) {
+        Text(stringResource(R.string.action_save))
+      }
+    },
+    dismissButton = {
+      TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+    },
+  )
 }
 
 /**

@@ -65,7 +65,7 @@
     <string name="action_back">رجوع</string>
 
     <!-- Category Detail Screen -->
-    <string name="add_monthly_bill">إضافة فاتورة شهرية</string>
+    <string name="add_monthly_bill">إضافة فاتورة</string>
     <string name="scan_for_category">تصوير فاتورة</string>
     <string name="export_category_sheet">تصدير كشف Sheet</string>
     <string name="delete_category_confirm_title">حذف قسم الفاتورة؟</string>
@@ -77,7 +77,7 @@
     <string name="empty_category_bills_subtitle">أضف فاتورة يدوياً مع تحديد تاريخها أو التقط صورة للفاتورة لاستخراج جدول التفاصيل آلياً.</string>
 
     <!-- Manual / Edit Bill Form -->
-    <string name="form_add_bill_title">إضافة فاتورة شهرية</string>
+    <string name="form_add_bill_title">إضافة فاتورة</string>
     <string name="form_edit_bill_title">تعديل بيانات الفاتورة والـ Sheet</string>
     <string name="field_bill_date">تاريخ الفاتورة</string>
     <string name="pick_date_button">اختيار التاريخ</string>
@@ -198,7 +198,7 @@
     <string name="bill_search_empty_title">لا توجد فواتير مطابقة لبحثك</string>
     <string name="bill_search_empty_subtitle">جرّب البحث باسم متجر آخر، أو تاريخ مثل 2026-10، أو فئة مصروف مثل الكهرباء أو تسوق.</string>
     <string name="bill_search_open_category">فتح القسم</string>
-    <string name="category_bills_search_placeholder">ابحث في فواتير القسم باسم المتجر أو التاريخ...</string>
+    <string name="category_bills_search_placeholder">البحث...</string>
 
     <!-- Household Budget & Monthly Category Charts Dashboard -->
     <string name="budget_dashboard_title">لوحة ميزانية المنزل والمصاريف</string>

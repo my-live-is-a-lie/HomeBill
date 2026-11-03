@@ -56,6 +56,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
+import com.example.data.CurrencyPreferenceStore
 import com.example.data.model.UiState
 import com.example.ui.auth.AuthScreen
 import com.example.ui.auth.authStateFlow
@@ -90,6 +91,7 @@ import kotlinx.serialization.Serializable
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     com.example.data.remote.UserGeminiKeyStore.init(this)
+    com.example.data.CurrencyPreferenceStore.init(this)
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
     setContent {
@@ -157,6 +159,7 @@ fun AuthenticatedAppShell(currentUserId: String) {
   val searchScope by vm.searchScope.collectAsStateWithLifecycle()
   val analyticsSummary by vm.analyticsSummary.collectAsStateWithLifecycle()
   val budgetDashboardState by vm.budgetDashboardState.collectAsStateWithLifecycle()
+  val preferredCurrency by CurrencyPreferenceStore.currencyFlow.collectAsStateWithLifecycle()
   val scanState by vm.scanState.collectAsStateWithLifecycle()
   val isSaving by vm.isSaving.collectAsStateWithLifecycle()
   val isReclassifying by vm.isReclassifying.collectAsStateWithLifecycle()
@@ -165,6 +168,7 @@ fun AuthenticatedAppShell(currentUserId: String) {
   val chatVm: BillChatViewModel = viewModel(key = "chat_$currentUserId")
   val chatMessages by chatVm.messages.collectAsStateWithLifecycle()
   val isChatTyping by chatVm.isTyping.collectAsStateWithLifecycle()
+  val chatTypingLabel by chatVm.typingLabel.collectAsStateWithLifecycle()
   val chatConversations by chatVm.conversations.collectAsStateWithLifecycle()
   val isTemporaryChat by chatVm.isTemporaryChat.collectAsStateWithLifecycle()
   val activeChatConversation by chatVm.activeConversation.collectAsStateWithLifecycle()
@@ -462,8 +466,8 @@ fun AuthenticatedAppShell(currentUserId: String) {
                     launchSingleTop = true
                   }
                 },
-                onCreateCategory = { name, uType, unit, threshold ->
-                  vm.createCategory(name, uType, unit, threshold) { created ->
+                onCreateCategory = { name, uType, unit, threshold, trackDuration ->
+                  vm.createCategory(name, uType, unit, threshold, trackDuration) { created ->
                     navController.navigate(CategoryDetailRoute(created.id))
                   }
                 },
@@ -500,6 +504,7 @@ fun AuthenticatedAppShell(currentUserId: String) {
               BillAssistantScreen(
                 messages = chatMessages,
                 isTyping = isChatTyping,
+                typingLabel = chatTypingLabel,
                 categories = categories,
                 allBills = allBills,
                 analyticsSummary = analyticsSummary,
@@ -572,8 +577,8 @@ fun AuthenticatedAppShell(currentUserId: String) {
                   }
                 },
                 onResetScan = { vm.resetScanState() },
-                onCreateCategory = { name, uType, unit, threshold ->
-                  vm.createCategory(name, uType, unit, threshold)
+                onCreateCategory = { name, uType, unit, threshold, trackDuration ->
+                  vm.createCategory(name, uType, unit, threshold, trackDuration)
                 },
               )
             }
@@ -628,6 +633,10 @@ fun AuthenticatedAppShell(currentUserId: String) {
                 onDeleteCategory = { catId ->
                   vm.deleteCategory(catId) { navController.popBackStack() }
                 },
+                onStartBillConsumption = { bill -> vm.markBillConsumptionStarted(bill) },
+                onEndBillConsumption = { bill -> vm.markBillConsumptionEnded(bill) },
+                onUndoBillConsumptionEnd = { bill -> vm.undoBillConsumptionEnded(bill) },
+                preferredCurrency = preferredCurrency,
               )
             }
           }

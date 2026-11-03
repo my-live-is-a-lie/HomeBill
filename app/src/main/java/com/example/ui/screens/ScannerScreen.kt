@@ -141,7 +141,7 @@ fun ScannerScreen(
   onReclassifyDraft: () -> Unit = {},
   onSaveScannedBill: (ScannedBillDraft, String?) -> Unit,
   onResetScan: () -> Unit,
-  onCreateCategory: (String, UtilityType, String, Double) -> Unit,
+  onCreateCategory: (String, UtilityType, String, Double, Boolean) -> Unit,
 ) {
   val context = LocalContext.current
   var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
@@ -245,9 +245,9 @@ fun ScannerScreen(
   if (showCreateDialog) {
     CategoryFormDialog(
       onDismiss = { showCreateDialog = false },
-      onSave = { name, uType, unit, threshold ->
+      onSave = { name, uType, unit, threshold, trackDuration ->
         showCreateDialog = false
-        onCreateCategory(name, uType, unit, threshold)
+        onCreateCategory(name, uType, unit, threshold, trackDuration)
       },
     )
   }

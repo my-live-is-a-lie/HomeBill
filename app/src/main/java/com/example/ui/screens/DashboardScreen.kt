@@ -112,7 +112,7 @@ fun DashboardScreen(
   onOpenCategory: (String) -> Unit,
   onOpenScanner: () -> Unit,
   onOpenAssistant: () -> Unit,
-  onCreateCategory: (String, UtilityType, String, Double) -> Unit,
+  onCreateCategory: (String, UtilityType, String, Double, Boolean) -> Unit,
   onSignOut: () -> Unit,
   budgetDashboardState: BudgetDashboardState? = null,
   onOpenAnalyticsDashboard: () -> Unit = {},
@@ -566,6 +566,7 @@ fun DashboardScreen(
                                 preset,
                                 preset.defaultUnit,
                                 25.0,
+                                false,
                               )
                             },
                             leadingIcon = {

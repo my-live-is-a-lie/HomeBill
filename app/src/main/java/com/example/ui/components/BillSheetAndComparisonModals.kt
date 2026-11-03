@@ -45,6 +45,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -88,6 +89,9 @@ fun BillSheetModal(
   comparison: BillComparisonResult?,
   onEditBill: () -> Unit,
   onDismiss: () -> Unit,
+  durationTracked: Boolean = false,
+  onStartConsumption: (BillRecord) -> Unit = {},
+  onEndConsumption: (BillRecord) -> Unit = {},
 ) {
   val context = LocalContext.current
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -158,6 +162,16 @@ fun BillSheetModal(
       }
 
       Spacer(modifier = Modifier.height(14.dp))
+
+      // Consumption duration tracking comes first in the sheet, before the summary strip.
+      if (durationTracked) {
+        BillDurationSection(
+          bill = bill,
+          onStartConsumption = onStartConsumption,
+          onEndConsumption = onEndConsumption,
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+      }
 
       // Summary KPI Strip
       Card(
@@ -411,6 +425,119 @@ fun BillSheetModal(
   }
 }
 
+// Consumption start/end tracking for bills in duration-tracked categories. Exactly one primary
+// action is shown at a time: start first, then end once started, then the end record once ended.
+// Ending asks for confirmation; the caller shows the undo snackbar after a confirmed end.
+@Composable
+private fun BillDurationSection(
+  bill: BillRecord,
+  onStartConsumption: (BillRecord) -> Unit,
+  onEndConsumption: (BillRecord) -> Unit,
+) {
+  var showEndConfirm by remember { mutableStateOf(false) }
+  val startedAt = bill.startedAtEpochMillis
+  val endedAt = bill.endedAtEpochMillis
+
+  if (showEndConfirm) {
+    AlertDialog(
+      onDismissRequest = { showEndConfirm = false },
+      title = { Text(stringResource(R.string.duration_end_confirm_title)) },
+      text = { Text(stringResource(R.string.duration_end_confirm_body)) },
+      confirmButton = {
+        Button(
+          onClick = {
+            showEndConfirm = false
+            onEndConsumption(bill)
+          },
+          modifier = Modifier.testTag("duration_confirm_end_button"),
+        ) {
+          Text(stringResource(R.string.duration_action_confirm))
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showEndConfirm = false }) {
+          Text(stringResource(R.string.action_cancel))
+        }
+      },
+    )
+  }
+
+  when {
+    endedAt != null -> {
+      Card(
+        colors =
+          CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+          ),
+        shape = MaterialTheme.shapes.medium,
+        modifier = Modifier.fillMaxWidth(),
+      ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+          if (startedAt != null) {
+            Text(
+              text =
+                stringResource(
+                  R.string.duration_started_on,
+                  DateAndFormatUtils.formatEpochMillisArabic(startedAt),
+                ),
+              style = MaterialTheme.typography.bodyMedium,
+            )
+          }
+          Text(
+            text =
+              stringResource(
+                R.string.duration_ended_on,
+                DateAndFormatUtils.formatEpochMillisArabic(endedAt),
+              ),
+            style = MaterialTheme.typography.bodyMedium,
+          )
+          if (startedAt != null) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+              text =
+                stringResource(
+                  R.string.duration_lasted_days,
+                  DateAndFormatUtils.formatDurationDaysArabic(
+                    DateAndFormatUtils.durationDaysBetween(startedAt, endedAt)
+                  ),
+                ),
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.Bold,
+              color = MaterialTheme.colorScheme.primary,
+            )
+          }
+        }
+      }
+    }
+    startedAt != null -> {
+      Text(
+        text =
+          stringResource(
+            R.string.duration_started_on,
+            DateAndFormatUtils.formatEpochMillisArabic(startedAt),
+          ),
+        style = MaterialTheme.typography.bodyMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+      )
+      Spacer(modifier = Modifier.height(8.dp))
+      Button(
+        onClick = { showEndConfirm = true },
+        modifier = Modifier.fillMaxWidth().height(50.dp).testTag("duration_end_button"),
+      ) {
+        Text(stringResource(R.string.duration_end_button))
+      }
+    }
+    else -> {
+      Button(
+        onClick = { onStartConsumption(bill) },
+        modifier = Modifier.fillMaxWidth().height(50.dp).testTag("duration_start_button"),
+      ) {
+        Text(stringResource(R.string.duration_start_button))
+      }
+    }
+  }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BillComparisonModal(
@@ -643,7 +770,13 @@ fun BillComparisonModal(
 fun CategoryFormDialog(
   existing: BillCategory? = null,
   onDismiss: () -> Unit,
-  onSave: (name: String, utilityType: UtilityType, unit: String, threshold: Double) -> Unit,
+  onSave: (
+    name: String,
+    utilityType: UtilityType,
+    unit: String,
+    threshold: Double,
+    trackDuration: Boolean,
+  ) -> Unit,
 ) {
   var selectedUtility by
     remember(existing) {
@@ -652,6 +785,7 @@ fun CategoryFormDialog(
   var name by remember(existing) { mutableStateOf(existing?.name ?: selectedUtility.defaultCategoryName) }
   var unit by remember(existing) { mutableStateOf(existing?.defaultUnit ?: selectedUtility.defaultUnit) }
   var threshold by remember(existing) { mutableDoubleStateOf(existing?.alertThresholdPercent ?: 25.0) }
+  var trackDuration by remember(existing) { mutableStateOf(existing?.trackDuration ?: false) }
 
   AlertDialog(
     onDismissRequest = onDismiss,
@@ -722,11 +856,36 @@ fun CategoryFormDialog(
             steps = 17,
           )
         }
+
+        // Duration tracking switch: when on, bills of this category get consumption
+        // start/end tracking in the bill sheet, and ended durations show on bill cards.
+        Row(
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween,
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          Column(modifier = Modifier.weight(1f)) {
+            Text(
+              text = stringResource(R.string.duration_track_label),
+              style = MaterialTheme.typography.labelLarge,
+            )
+            Text(
+              text = stringResource(R.string.duration_track_desc),
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+          }
+          Switch(
+            checked = trackDuration,
+            onCheckedChange = { trackDuration = it },
+            modifier = Modifier.testTag("category_track_duration_switch"),
+          )
+        }
       }
     },
     confirmButton = {
       Button(
-        onClick = { onSave(name, selectedUtility, unit, threshold) },
+        onClick = { onSave(name, selectedUtility, unit, threshold, trackDuration) },
         modifier = Modifier.testTag("save_category_button"),
       ) {
         Text(stringResource(R.string.action_save))
@@ -747,6 +906,7 @@ fun BillFormBottomSheet(
   currentUserId: String,
   onDismiss: () -> Unit,
   onSaveBill: (BillRecord) -> Unit,
+  preferredCurrency: String = "ر.س",
 ) {
   val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
   var billDateIso by
@@ -762,7 +922,7 @@ fun BillFormBottomSheet(
     remember(existingBill) {
       mutableStateOf(existingBill?.totalAmount?.let { DateAndFormatUtils.formatNumber(it) } ?: "")
     }
-  var currency by remember(existingBill) { mutableStateOf(existingBill?.currency ?: "ر.س") }
+  var currency by remember(existingBill) { mutableStateOf(existingBill?.currency ?: preferredCurrency) }
   var prevReadingText by
     remember(existingBill) {
       mutableStateOf(

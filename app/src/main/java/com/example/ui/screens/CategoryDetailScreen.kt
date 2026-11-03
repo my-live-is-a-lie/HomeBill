@@ -39,6 +39,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -47,6 +51,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -76,6 +81,7 @@ import com.example.ui.components.VarianceBadge
 import com.example.ui.components.visualSpec
 import com.example.util.BillSheetExporter
 import com.example.util.DateAndFormatUtils
+import kotlinx.coroutines.launch
 
 // Buttons that sit side by side have narrow labels that can wrap to two lines. They use a minimum
 // height (never a fixed one) so no text is cut off, and the compact padding leaves more room.
@@ -93,6 +99,10 @@ fun CategoryDetailScreen(
   onDeleteBill: (String) -> Unit,
   onUpdateCategory: (BillCategory) -> Unit,
   onDeleteCategory: (String) -> Unit,
+  onStartBillConsumption: (BillRecord) -> Unit = {},
+  onEndBillConsumption: (BillRecord) -> Unit = {},
+  onUndoBillConsumptionEnd: (BillRecord) -> Unit = {},
+  preferredCurrency: String = "ر.س",
 ) {
   val context = LocalContext.current
   var showAddOrEditBill by remember { mutableStateOf(false) }
@@ -103,6 +113,12 @@ fun CategoryDetailScreen(
   var showDeleteCategoryConfirm by remember { mutableStateOf(false) }
   var chartShowConsumption by remember { mutableStateOf(false) }
   var categorySearchQuery by remember { mutableStateOf("") }
+  // Own snackbar host for the consumption-end undo action: the app-wide host shows plain
+  // messages only, while this one carries the timed undo button.
+  val durationSnackbarHostState = remember { SnackbarHostState() }
+  val durationScope = rememberCoroutineScope()
+  val durationEndedMessage = stringResource(R.string.duration_ended_message)
+  val durationUndoLabel = stringResource(R.string.duration_action_undo)
 
   if (category == null) {
     Scaffold(
@@ -154,6 +170,7 @@ fun CategoryDetailScreen(
         showAddOrEditBill = false
         editingBill = null
       },
+      preferredCurrency = preferredCurrency,
       onSaveBill = { bill ->
         showAddOrEditBill = false
         editingBill = null
@@ -163,14 +180,34 @@ fun CategoryDetailScreen(
   }
 
   activeSheetBill?.let { sheetBill ->
+    // Resolve the live bill from the observed list so start/end presses refresh the open sheet.
+    val liveSheetBill = categoryBills.firstOrNull { it.id == sheetBill.id } ?: sheetBill
     BillSheetModal(
-      bill = sheetBill,
-      comparison = comparisons[sheetBill.id],
+      bill = liveSheetBill,
+      comparison = comparisons[liveSheetBill.id],
       onEditBill = {
-        editingBill = sheetBill
+        editingBill = liveSheetBill
         showAddOrEditBill = true
       },
       onDismiss = { activeSheetBill = null },
+      durationTracked = category.trackDuration,
+      onStartConsumption = { bill -> onStartBillConsumption(bill) },
+      onEndConsumption = { bill ->
+        // Close the sheet first so the undo snackbar is visible on the category screen.
+        activeSheetBill = null
+        onEndBillConsumption(bill)
+        durationScope.launch {
+          val result =
+            durationSnackbarHostState.showSnackbar(
+              message = durationEndedMessage,
+              actionLabel = durationUndoLabel,
+              duration = SnackbarDuration.Long,
+            )
+          if (result == SnackbarResult.ActionPerformed) {
+            onUndoBillConsumptionEnd(bill)
+          }
+        }
+      },
     )
   }
 
@@ -185,7 +222,7 @@ fun CategoryDetailScreen(
     CategoryFormDialog(
       existing = category,
       onDismiss = { showEditCategoryDialog = false },
-      onSave = { name, uType, unit, threshold ->
+      onSave = { name, uType, unit, threshold, trackDuration ->
         showEditCategoryDialog = false
         onUpdateCategory(
           category.copy(
@@ -193,6 +230,7 @@ fun CategoryDetailScreen(
             utilityType = uType.firestoreKey,
             defaultUnit = unit,
             alertThresholdPercent = threshold,
+            trackDuration = trackDuration,
           )
         )
       },
@@ -266,6 +304,7 @@ fun CategoryDetailScreen(
         },
       )
     },
+    snackbarHost = { SnackbarHost(durationSnackbarHostState) },
     containerColor = MaterialTheme.colorScheme.background,
   ) { innerPadding ->
     Box(
@@ -282,7 +321,7 @@ fun CategoryDetailScreen(
           val avgAmount =
             if (categoryBills.isNotEmpty()) categoryBills.map { it.totalAmount }.average() else 0.0
           val latest = categoryBills.firstOrNull()
-          val currency = latest?.currency ?: "ر.س"
+          val currency = latest?.currency ?: preferredCurrency
 
           Card(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -382,6 +421,50 @@ fun CategoryDetailScreen(
           }
         }
 
+        // Ended-consumption durations summary for duration-tracked categories: the average
+        // of all ended bills, so a new bill can be compared with previous ones at a glance.
+        if (category.trackDuration) {
+          val endedBills =
+            categoryBills.filter {
+              it.startedAtEpochMillis != null && it.endedAtEpochMillis != null
+            }
+          if (endedBills.isNotEmpty()) {
+            val averageDays =
+              endedBills.sumOf {
+                DateAndFormatUtils.durationDaysBetween(
+                  it.startedAtEpochMillis ?: 0L,
+                  it.endedAtEpochMillis ?: 0L,
+                )
+              } / endedBills.size
+            item {
+              Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier.fillMaxWidth(),
+              ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                  Text(
+                    text = stringResource(R.string.duration_average_title),
+                    style = MaterialTheme.typography.titleSmall,
+                  )
+                  Spacer(modifier = Modifier.height(4.dp))
+                  Text(
+                    text = DateAndFormatUtils.formatDurationDaysArabic(averageDays),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                  )
+                  Text(
+                    text = stringResource(R.string.duration_ended_count, endedBills.size),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                  )
+                }
+              }
+            }
+          }
+        }
+
         // Category Trend Chart if >= 2 bills exist
         if (trendPoints.size >= 2) {
           item {
@@ -416,7 +499,7 @@ fun CategoryDetailScreen(
                 Spacer(modifier = Modifier.height(10.dp))
                 val unitOrCurr =
                   if (chartShowConsumption) category.defaultUnit
-                  else (categoryBills.firstOrNull()?.currency ?: "ر.س")
+                  else (categoryBills.firstOrNull()?.currency ?: preferredCurrency)
                 CategorySmoothTrendChart(
                   points = trendPoints,
                   showConsumption = chartShowConsumption,
@@ -474,6 +557,7 @@ fun CategoryDetailScreen(
               MonthlyBillCard(
                 bill = bill,
                 comparison = comp,
+                durationTracked = category.trackDuration,
                 onOpenSheet = { activeSheetBill = bill },
                 onOpenComparison = { if (comp != null) activeComparison = comp },
                 onDelete = { onDeleteBill(bill.id) },
@@ -490,6 +574,7 @@ fun CategoryDetailScreen(
 private fun MonthlyBillCard(
   bill: BillRecord,
   comparison: BillComparisonResult?,
+  durationTracked: Boolean = false,
   onOpenSheet: () -> Unit,
   onOpenComparison: () -> Unit,
   onDelete: () -> Unit,
@@ -534,6 +619,47 @@ private fun MonthlyBillCard(
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
           )
+          // Duration status indicator for tracked categories only. No buttons on the card:
+          // starting and ending happen inside the bill sheet.
+          if (durationTracked) {
+            val startedAt = bill.startedAtEpochMillis
+            val endedAt = bill.endedAtEpochMillis
+            if (endedAt != null) {
+              Spacer(modifier = Modifier.height(6.dp))
+              Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = MaterialTheme.shapes.small,
+              ) {
+                Text(
+                  text =
+                    if (startedAt != null) {
+                      stringResource(
+                        R.string.duration_card_ended,
+                        DateAndFormatUtils.formatDurationDaysArabic(
+                          DateAndFormatUtils.durationDaysBetween(startedAt, endedAt)
+                        ),
+                      )
+                    } else {
+                      stringResource(R.string.duration_ended_label)
+                    },
+                  style = MaterialTheme.typography.bodySmall,
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+              }
+            } else if (startedAt != null) {
+              Spacer(modifier = Modifier.height(6.dp))
+              Surface(
+                color = MaterialTheme.colorScheme.tertiaryContainer,
+                shape = MaterialTheme.shapes.small,
+              ) {
+                Text(
+                  text = stringResource(R.string.duration_in_use),
+                  style = MaterialTheme.typography.bodySmall,
+                  modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                )
+              }
+            }
+          }
         }
 
         Column(horizontalAlignment = Alignment.End) {

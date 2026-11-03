@@ -3,8 +3,15 @@ package com.example.ui.viewmodel
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.CurrencyPreferenceStore
+import com.example.data.IpLocationResolver
 import com.example.data.model.BillCategory
 import com.example.data.model.BillRecord
+import com.example.data.remote.BillChatAiReplyDto
+import com.example.data.remote.ChatContextMode
+import com.example.data.remote.ChatContextSelection
+import com.example.data.remote.ChatContextSelector
+import com.example.data.remote.CurrencyProposal
 import com.example.data.remote.ChatChartBar
 import com.example.data.remote.ChatStatHighlight
 import com.example.data.remote.GeminiBillChatService
@@ -42,6 +49,11 @@ class BillChatViewModel(
   private val _isTyping = MutableStateFlow(false)
   val isTyping: StateFlow<Boolean> = _isTyping.asStateFlow()
 
+  // Waiting text for the current turn, chosen by the context selector so it
+  // describes what the turn is actually doing. Empty = no turn in flight.
+  private val _typingLabel = MutableStateFlow("")
+  val typingLabel: StateFlow<String> = _typingLabel.asStateFlow()
+
   private val _conversations = MutableStateFlow<List<ChatConversation>>(emptyList())
   val conversations: StateFlow<List<ChatConversation>> = _conversations.asStateFlow()
 
@@ -63,6 +75,24 @@ class BillChatViewModel(
 
   private var historyLoaded = false
   private var lastConsumedInitialPrompt: String? = null
+
+  // A currency proposal the assistant resolved and is waiting for the user
+  // to confirm. In-memory only, never persisted: switching conversations
+  // discards it, and "apply" acts on it only while it exists, so a bare
+  // model claim can never change the setting on its own.
+  private var pendingCurrencyProposal: CurrencyProposal? = null
+
+  // True after the app asked the user to name their country (IP lookup
+  // failed, or the currency could not be determined from it). While true,
+  // a country-like answer is routed to the currency flow instead of being
+  // classified as general chat, so the model keeps the currency protocol
+  // and returns a proposal instead of merely claiming success in prose.
+  private var awaitingCountryName = false
+
+  private fun clearPendingCurrencyProposal() {
+    pendingCurrencyProposal = null
+    awaitingCountryName = false
+  }
 
   /**
    * Loads local history once (called from MainActivity after sign-in, when the
@@ -104,6 +134,7 @@ class BillChatViewModel(
   private fun enterDraft() {
     discardTemporaryChat()
     discardDraft()
+    clearPendingCurrencyProposal()
     val fresh = newConversation()
     draftConversation = fresh
     lastConsumedInitialPrompt = null
@@ -135,6 +166,7 @@ class BillChatViewModel(
    */
   fun enterTemporaryChat() {
     discardDraft()
+    clearPendingCurrencyProposal()
     val now = System.currentTimeMillis()
     val temp = ChatConversation(
       id = UUID.randomUUID().toString(),
@@ -164,6 +196,7 @@ class BillChatViewModel(
     // Leaving a temporary or draft chat discards it, unsaved.
     discardTemporaryChat()
     discardDraft()
+    clearPendingCurrencyProposal()
     lastConsumedInitialPrompt = null
     _isTyping.value = false
     publish(_conversations.value, conversationId)
@@ -223,6 +256,7 @@ class BillChatViewModel(
   }
 
   fun deleteConversation(conversationId: String) {
+    clearPendingCurrencyProposal()
     if (_isTemporaryChat.value && temporaryConversation?.id == conversationId) {
       enterTemporaryChat()
       return
@@ -298,6 +332,26 @@ class BillChatViewModel(
     val userMessage = BillChatMessage(isUser = true, text = trimmed, imagePath = attachedImagePath)
     updateActiveMessages(cleanedMessages + userMessage, newUserPrompt = trimmed)
     if (!isDraftActive()) persist()
+
+    // A confirmation or explicit add/set instruction while a currency
+    // proposal is pending is applied here, by the app itself, instead of
+    // depending on the model returning the exact apply action: a model
+    // that merely claims the change in words must never be the only thing
+    // standing between "yes" and the setting actually changing. The
+    // applied currency is also added to the user's currency list, so it
+    // shows up selected in Settings.
+    val pendingProposal = pendingCurrencyProposal
+    if (pendingProposal != null && ChatContextSelector.isCurrencyApplyIntent(trimmed)) {
+      pendingCurrencyProposal = null
+      CurrencyPreferenceStore.addCurrency(pendingProposal.currencyLabel, pendingProposal.symbol)
+      CurrencyPreferenceStore.setCurrency(pendingProposal.symbol)
+      postAssistantMessage(
+        "تم تغيير العملة الافتراضية لفواتيرك إلى ${pendingProposal.currencyLabel} (${pendingProposal.symbol}). ستُستخدم في الفواتير الجديدة التي لا تحمل عملة محددة، وهي الآن موجودة في قائمة العملات بالإعدادات.",
+      )
+      if (!isDraftActive()) persist()
+      return
+    }
+
     executeTurn(
       priorHistory = priorHistory,
       userPrompt = trimmed,
@@ -342,20 +396,58 @@ class BillChatViewModel(
     allBills: List<BillRecord>,
     analyticsSummary: MonthlyAnalyticsSummary,
   ) {
+    // Pick the smallest context that can answer this prompt. A bill image
+    // attached to the turn keeps full context: image questions may need
+    // category context to classify what the photo shows.
+    // A country-like answer while the app awaits a country name goes to
+    // the currency flow: without the currency rules, the model would
+    // answer a bare country name with a prose success claim and no
+    // proposal action, so nothing would ever be applied.
+    val isCountryAnswer =
+      awaitingCountryName && ChatContextSelector.isCountryLikeAnswer(userPrompt)
+    if (awaitingCountryName && !isCountryAnswer) {
+      // The user moved on to something else; stop waiting for a country.
+      awaitingCountryName = false
+    }
+    val selection =
+      if (AssistantImageBridge.attachment.value != null) {
+        ChatContextSelection(
+          ChatContextMode.FULL,
+          categories,
+          allBills,
+          allBills,
+          "جارٍ تحليل بيانات الفواتير وإعداد الإجابة...",
+        )
+      } else if (isCountryAnswer) {
+        ChatContextSelection(
+          ChatContextMode.CURRENCY,
+          emptyList(),
+          emptyList(),
+          emptyList(),
+          "جارٍ تجهيز إعداد العملة...",
+        )
+      } else {
+        ChatContextSelector.select(userPrompt, categories, allBills, pendingCurrencyProposal)
+      }
     _isTyping.value = true
+    _typingLabel.value = selection.typingLabel
     viewModelScope.launch {
       val result =
         chatService.sendChatTurn(
           conversationHistory = priorHistory,
           userPrompt = userPrompt,
-          categories = categories,
-          allBills = allBills,
+          categories = selection.categories,
+          allBills = selection.bills,
           analyticsSummary = analyticsSummary,
           preferredModel = _activeConversation.value?.modelId,
           thinkingLevel = _activeConversation.value?.thinkingLevel,
+          pendingCurrencyProposal = pendingCurrencyProposal,
+          contextMode = selection.mode,
+          detailBills = selection.detailBills,
         )
 
       _isTyping.value = false
+      _typingLabel.value = ""
 
       result
         .onSuccess { dto ->
@@ -369,6 +461,20 @@ class BillChatViewModel(
               followUpSuggestions = dto.followUpSuggestions,
             )
           updateActiveMessages(_messages.value + aiMsg)
+          handleCurrencyAction(dto, categories, allBills, analyticsSummary)
+          // Safety net: a currency turn whose model text claims a change
+          // or addition but carries no action must never stand
+          // uncorrected — the user reads the claim as done. The
+          // correction states the actual current default from the store.
+          if (
+            selection.mode == ChatContextMode.CURRENCY &&
+              dto.currencyAction.isBlank() &&
+              ChatContextSelector.claimsCurrencyChange(dto.replyText)
+          ) {
+            postAssistantMessage(
+              "تنبيه: لم يتم تغيير العملة الافتراضية حتى الآن؛ العملة الحالية هي ${CurrencyPreferenceStore.getCurrency()}. لإتمام التغيير، أجب على سؤال التأكيد أو اطلب مني تحديد العملة من جديد.",
+            )
+          }
           if (isDraftActive()) {
             promoteDraft()
           } else {
@@ -390,7 +496,152 @@ class BillChatViewModel(
     }
   }
 
+  /**
+   * Executes a currency-setting action the model requested. The setting is
+   * never changed on a bare model claim: "apply" only acts on a pending
+   * proposal the user already confirmed, and every other action only
+   * proposes or cancels. All messages posted here are local assistant
+   * messages, not model turns — except the internal determination turn in
+   * [executeCurrencyDeterminationTurn], whose model text is never shown.
+   */
+  private suspend fun handleCurrencyAction(
+    dto: BillChatAiReplyDto,
+    categories: List<BillCategory>,
+    allBills: List<BillRecord>,
+    analyticsSummary: MonthlyAnalyticsSummary,
+  ) {
+    when (dto.currencyAction) {
+      "resolve_by_residence" -> {
+        // A new resolve supersedes any older pending proposal.
+        pendingCurrencyProposal = null
+        awaitingCountryName = false
+        IpLocationResolver.resolveCountryName()
+          .onSuccess { countryDisplay ->
+            executeCurrencyDeterminationTurn(
+              countryDisplay = countryDisplay,
+              categories = categories,
+              allBills = allBills,
+              analyticsSummary = analyticsSummary,
+            )
+          }
+          .onFailure {
+            postAssistantMessage(
+              "تعذّر تحديد محل إقامتك من الشبكة حاليًا. أخبرني باسم الدولة التي تقيم فيها وسأضبط عملتها لك.",
+            )
+            awaitingCountryName = true
+          }
+      }
+      "propose_currency" -> {
+        val label = dto.currencyLabel.trim()
+        val symbol = dto.currencySymbol.trim()
+        if (label.isNotBlank() && symbol.isNotBlank()) {
+          pendingCurrencyProposal = CurrencyProposal(currencyLabel = label, symbol = symbol)
+          awaitingCountryName = false
+          postAssistantMessage(
+            "تم تحديد العملة المحلية: $label ($symbol). هل أغيّر العملة الافتراضية لفواتيرك إلى $symbol؟",
+            // Quick-action buttons: tapping one sends it as the user's
+            // reply, so confirming no longer requires typing. "نعم" is
+            // applied locally (pending proposal), "لا" cancels it.
+            listOf("نعم", "لا"),
+          )
+        }
+        // Blank label or symbol: ignore. A proposal without both parts is unusable.
+      }
+      "apply_currency_change" -> {
+        val proposal = pendingCurrencyProposal
+        if (proposal != null) {
+          pendingCurrencyProposal = null
+          CurrencyPreferenceStore.addCurrency(proposal.currencyLabel, proposal.symbol)
+          CurrencyPreferenceStore.setCurrency(proposal.symbol)
+          postAssistantMessage(
+            "تم تغيير العملة الافتراضية لفواتيرك إلى ${proposal.currencyLabel} (${proposal.symbol}). ستُستخدم في الفواتير الجديدة التي لا تحمل عملة محددة، وهي الآن موجودة في قائمة العملات بالإعدادات.",
+          )
+        } else {
+          // The model claimed a change the app never applied (no proposal
+          // was pending): say so explicitly instead of leaving the claim
+          // standing uncorrected.
+          postAssistantMessage(
+            "لم يتم تغيير العملة الافتراضية، لأنه لا يوجد اقتراح معلّق حاليًا. اطلب مني تحديد العملة من جديد وسأعرض عليك الاقتراح للتأكيد قبل أي تغيير.",
+          )
+        }
+      }
+      "cancel_currency_change" -> {
+        pendingCurrencyProposal = null
+        awaitingCountryName = false
+      }
+    }
+  }
+
+  /**
+   * Internal follow-up turn, never shown as a user message: the app already
+   * knows the location from the IP lookup, so it asks the model itself to
+   * determine that location's currency and return it in structured fields,
+   * with a guiding example of the required format. The model's reply text
+   * is intentionally not posted; only the resulting confirmation question
+   * (or a failure note) reaches the user.
+   */
+  private suspend fun executeCurrencyDeterminationTurn(
+    countryDisplay: String,
+    categories: List<BillCategory>,
+    allBills: List<BillRecord>,
+    analyticsSummary: MonthlyAnalyticsSummary,
+  ) {
+    _isTyping.value = true
+    _typingLabel.value = "جارٍ تجهيز إعداد العملة..."
+    val history = _messages.value.drop(1).map { it.isUser to it.text }
+    val result =
+      chatService.sendChatTurn(
+        conversationHistory = history,
+        userPrompt =
+          "محل إقامة المستخدم حسب عنوان IP هو: $countryDisplay. حدّد العملة المحلية لهذه الدولة من معرفتك، واضبط currencyAction على \"propose_currency\"، واملأ currencyLabel باسم العملة والدولة وcurrencySymbol برمزها. مثال على الصيغة المطلوبة: (جنيه مصري ج.م). اجعل replyText جملة قصيرة فقط.",
+        categories = emptyList(),
+        allBills = emptyList(),
+        analyticsSummary = analyticsSummary,
+        preferredModel = _activeConversation.value?.modelId,
+        thinkingLevel = _activeConversation.value?.thinkingLevel,
+        contextMode = ChatContextMode.CURRENCY,
+        detailBills = emptyList(),
+      )
+    _isTyping.value = false
+    _typingLabel.value = ""
+    result
+      .onSuccess { dto ->
+        if (
+          dto.currencyAction == "propose_currency" &&
+            dto.currencyLabel.isNotBlank() &&
+            dto.currencySymbol.isNotBlank()
+        ) {
+          val label = dto.currencyLabel.trim()
+          val symbol = dto.currencySymbol.trim()
+          pendingCurrencyProposal = CurrencyProposal(currencyLabel = label, symbol = symbol)
+          awaitingCountryName = false
+          postAssistantMessage(
+            "محل إقامتك حسب الشبكة هو $countryDisplay، والعملة المحلية هي $label ($symbol). هل أغيّر العملة الافتراضية لفواتيرك إلى $symbol؟",
+            // Same quick-action buttons as the propose branch above.
+            listOf("نعم", "لا"),
+          )
+        } else {
+          postAssistantMessage(
+            "تعذّر تحديد العملة من محل إقامتك. أخبرني باسم الدولة التي تقيم فيها وسأضبط عملتها لك.",
+          )
+          awaitingCountryName = true
+        }
+      }
+      .onFailure {
+        postAssistantMessage(
+          "تعذّر تحديد العملة من محل إقامتك. أخبرني باسم الدولة التي تقيم فيها وسأضبط عملتها لك.",
+        )
+      }
+  }
+
+  private fun postAssistantMessage(text: String, suggestions: List<String> = emptyList()) {
+    updateActiveMessages(
+      _messages.value + BillChatMessage(isUser = false, text = text, followUpSuggestions = suggestions),
+    )
+  }
+
   fun clearConversation() {
+    clearPendingCurrencyProposal()
     val active = _activeConversation.value
     if (active == null) {
       _messages.value = listOf(createWelcomeMessage())

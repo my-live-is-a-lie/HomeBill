@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="currency_title">العملة</string>
+  <string name="currency_current">العملة الافتراضية للفواتير الجديدة: %1$s</string>
+  <string name="currency_dialog_title">تحديد العملة</string>
+  <string name="currency_empty">لم تضف أي عملة بعد — أضف عملتك من الأسفل</string>
+  <string name="currency_add_new">إضافة عملة جديدة</string>
+  <string name="currency_label_hint">اسم العملة و الدولة</string>
+  <string name="currency_symbol_hint">رمز العملة</string>
+  <string name="currency_add_action">إضافة</string>
+  <string name="currency_delete">حذف العملة</string>
+</resources>

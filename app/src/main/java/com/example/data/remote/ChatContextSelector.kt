@@ -66,6 +66,9 @@ object ChatContextSelector {
   /** Most bills printed for one period question (the service prints at most 40 anyway). */
   private const val MAX_RANGE_BILLS = 30
 
+  /** Earliest year a bare four-digit number may be read as a year (not an amount such as 2000). */
+  private const val MIN_PLAUSIBLE_YEAR = 2015
+
   // Utility-type key -> Arabic words that name it in a question. Mirrors the
   // vocabulary UtilityType.fromKey already recognises.
   private val TYPE_KEYWORDS =
@@ -449,7 +452,14 @@ object ChatContextSelector {
     val prompt = normalize(toAsciiDigits(rawPrompt))
     val curYear = now.get(Calendar.YEAR)
     val curMonth = now.get(Calendar.MONTH) + 1
-    val explicitYear = Regex("20\\d\\d").find(prompt)?.value?.toIntOrNull()
+    // A four-digit number counts as a year only when it stands alone and is a plausible year, so
+    // an amount such as "2000 جنيه" or part of a longer number is not read as a period.
+    val explicitYear =
+      Regex("(?<!\\d)20\\d\\d(?!\\d)")
+        .find(prompt)
+        ?.value
+        ?.toIntOrNull()
+        ?.takeIf { it in MIN_PLAUSIBLE_YEAR..(curYear + 1) }
 
     // 1. A named month.
     val named = MONTH_NAMES.firstOrNull { (name, _) -> prompt.contains(name) }

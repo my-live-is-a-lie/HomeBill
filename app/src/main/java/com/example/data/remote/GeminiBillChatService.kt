@@ -169,6 +169,10 @@ class GeminiBillChatService(
         // Read once so the instructions and the request tools always agree.
         val webSearchEnabled = AssistantWebSearchStore.isEnabled()
 
+        // With many bills listed, send one short line per bill (date, category, amount,
+        // consumption) unless the question is about what is inside a bill.
+        val compactBills = detailBills.size > 5 && !ChatContextSelector.needsItemDetails(userPrompt)
+
         val systemContext =
           buildSystemInstruction(
             categories,
@@ -179,6 +183,7 @@ class GeminiBillChatService(
             pendingCurrencyProposal,
             contextMode,
             webSearchEnabled,
+            compactBills,
           ) +
             if (attachedImageBase64 != null) IMAGE_ATTACHMENT_NOTE else ""
 
@@ -484,11 +489,12 @@ class GeminiBillChatService(
     pendingCurrencyProposal: CurrencyProposal?,
     contextMode: ChatContextMode,
     webSearchEnabled: Boolean,
+    compactBills: Boolean,
   ): String = buildString {
     appendLine("أنت «المساعد الذكي» (مدعوم بـ Gemini)، مستشار مالي وتحليلي خبير داخل تطبيق أندرويد «فواتيري» لإدارة الفواتير المنزلية.")
     appendLine("مهمتك الأساسية:")
     appendLine("1) الإجابة بالعربية الواضحة والمنظمة عن أي سؤال يخص فواتير ومصاريف المستخدم المسجلة (كهرباء، مياه، غاز، إنترنت، اتصالات، تسوق ومقاضي، مطاعم، صيانة، وقود، وغيرها).")
-    appendLine("2) إعداد إحصائيات دقيقة ومقارنات شهرية وتحليل أسباب التفاوتات في القيمة المالية أو كمية الاستهلاك بناءً على البيانات الفعلية أدناه فقط دون اختلاق أرقام غير موجودة.")
+    appendLine("2) إعداد إحصائيات دقيقة ومقارنات شهرية وتحليل أسباب التفاوت في القيمة المالية أو كمية الاستهلاك بناءً على البيانات الفعلية أدناه فقط دون اختلاق أرقام غير موجودة.")
     appendLine("3) عندما يطلب المستخدم إحصائية أو مقارنة رقمية أو تحليلاً للبيانات، قم بتعبئة مصفوفة highlights (بأهم المؤشرات الرقمية) ومصفوفة chartBars مع chartTitle (برسم بياني مبسط للقيم المقارنة) إلى جانب الشرح النصي في replyText.")
     appendLine("4) مساعدة المستخدم في شرح مزايا التطبيق وكيفية استخدامها:")
     appendLine("   - تبويب «الفواتير»: إنشاء أقسام مخصصة باسم حر (مثل فاتورة الغاز أو فواتير التسوق) وتحديد وحدة القياس ونسبة تنبيه التفاوت (مثلاً 25%)، والدخول لأي قسم لإضافة فواتير شهرية بتاريخ مستقل أو تعديلها.")
@@ -538,7 +544,7 @@ class GeminiBillChatService(
     appendLine("- إجمالي الشهر الحالي/الأحدث: ${DateAndFormatUtils.formatMoney(summary.currentMonthTotal)} ${summary.primaryCurrency}")
     appendLine("- المتوسط الشهري العام: ${DateAndFormatUtils.formatMoney(summary.averageMonthlyCost)} ${summary.primaryCurrency}")
     summary.monthOverMonthChangePercent?.let { mom ->
-      appendLine("- نسبة التغير عن الشهر السابق: ${String.format(Locale.US, "%+.1f%%", mom)}")
+      appendLine("- نسبة التغيير عن الشهر السابق: ${String.format(Locale.US, "%+.1f%%", mom)}")
     }
     appendLine("- الفئة الأعلى تكلفة: ${summary.highestCategoryName}")
     appendLine("- عدد تنبيهات التفاوت النشطة: ${summary.activeAlerts.size}")
@@ -588,12 +594,20 @@ class GeminiBillChatService(
       (contextMode == ChatContextMode.FULL || contextMode == ChatContextMode.TARGETED) &&
         detailBills.isNotEmpty()
     ) {
+      val shown = detailBills.sortedByDescending { it.billDateEpochMillis }.take(40)
       appendLine()
-      appendLine("=== سجل الفواتير التفصيلي (الأحدث أولاً، حتى 40 فاتورة) ===")
-      detailBills
-        .sortedByDescending { it.billDateEpochMillis }
-        .take(40)
-        .forEach { bill ->
+      if (compactBills) {
+        appendLine("=== سجل الفواتير (مختصر: التاريخ والقسم والمبلغ والاستهلاك فقط، الأحدث أولاً، حتى 40 فاتورة) ===")
+        appendLine("إن احتاج الجواب إلى بنود فاتورة أو قراءات عدادها أو جهتها فاطلب من المستخدم أن يسأل عن تلك الفاتورة تحديداً.")
+      } else {
+        appendLine("=== سجل الفواتير التفصيلي (الأحدث أولاً، حتى 40 فاتورة) ===")
+      }
+      shown.forEach { bill ->
+        if (compactBills) {
+          appendLine(
+            "• [${bill.billDateIso}] قسم «${bill.categoryName}» | المبلغ: ${DateAndFormatUtils.formatMoney(bill.totalAmount)} ${bill.currency} | الاستهلاك: ${DateAndFormatUtils.formatNumber(bill.consumptionValue)} ${bill.consumptionUnit}"
+          )
+        } else {
           val sheetPreview =
             if (bill.sheetItems.isNotEmpty()) {
               bill.sheetItems
@@ -606,10 +620,25 @@ class GeminiBillChatService(
             "• [${bill.billDateIso}] قسم «${bill.categoryName}» | المبلغ: ${DateAndFormatUtils.formatMoney(bill.totalAmount)} ${bill.currency} | الاستهلاك: ${DateAndFormatUtils.formatNumber(bill.consumptionValue)} ${bill.consumptionUnit} | القراءات: (${DateAndFormatUtils.formatNumber(bill.previousReading)} -> ${DateAndFormatUtils.formatNumber(bill.currentReading)}) | الجهة: ${bill.providerName.ifBlank { "—" }} | بنود الـ Sheet: [$sheetPreview]"
           )
         }
+      }
+      // Totals computed in the app, so the model does not add up a column of numbers itself.
+      if (shown.size > 1) {
+        shown.groupBy { it.currency }.forEach { (currency, group) ->
+          val total = group.sumOf { it.totalAmount }
+          appendLine(
+            "- مجموع الفواتير المعروضة أعلاه بعملة $currency: ${DateAndFormatUtils.formatMoney(total)} (عدد ${group.size}، المتوسط ${DateAndFormatUtils.formatMoney(total / group.size)}) — محسوب في التطبيق، اعتمد عليه بدل الجمع بنفسك."
+          )
+        }
+      }
     } else if (contextMode == ChatContextMode.FULL && allBills.isEmpty()) {
       appendLine()
       appendLine(
         "ملاحظة: المستخدم لم يسجل أي فواتير بعد؛ إذا سأل عن بياناته شجعه بلطف على إنشاء قسم أو مسح فاتورة بالكاميرا، مع الإجابة الكاملة عن أي استفسار حول التطبيق أو نصائح إدارة الفواتير."
+      )
+    } else if (contextMode == ChatContextMode.TARGETED && detailBills.isEmpty()) {
+      appendLine()
+      appendLine(
+        "ملاحظة: لا توجد فواتير مسجلة تطابق ما طلبه المستخدم (القسم أو الفترة)؛ قل ذلك بوضوح ولا تخمّن أرقاماً."
       )
     }
   }

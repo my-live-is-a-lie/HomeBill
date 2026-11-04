@@ -1,6 +1,7 @@
 package com.example.data.remote
 
 import android.util.Log
+import com.example.data.AssistantWebSearchStore
 import com.example.data.CurrencyPreferenceStore
 import com.example.data.model.BillCategory
 import com.example.data.model.BillRecord
@@ -35,11 +36,22 @@ data class GeminiChatTurn(
   val parts: List<GeminiPart>,
 )
 
+/** Empty settings object of Gemini's built-in Google Search tool; it serializes as `{}`. */
+@Serializable class GeminiGoogleSearch
+
+/** One entry of the request's `tools` list. Only Google Search is used, and only when enabled. */
+@Serializable
+data class GeminiTool(
+  val googleSearch: GeminiGoogleSearch? = null,
+)
+
 @Serializable
 data class GeminiChatRequest(
   val contents: List<GeminiChatTurn>,
   val generationConfig: GeminiGenerationConfig? = null,
   val systemInstruction: GeminiChatTurn? = null,
+  // Empty (the default) = no tools, exactly like before web search existed.
+  val tools: List<GeminiTool> = emptyList(),
 )
 
 @Serializable
@@ -154,6 +166,9 @@ class GeminiBillChatService(
         // A bill image the user sent from a bill screen (null = normal text-only chat).
         val attachedImageBase64 = AssistantImageBridge.currentAttachmentBase64()
 
+        // Read once so the instructions and the request tools always agree.
+        val webSearchEnabled = AssistantWebSearchStore.isEnabled()
+
         val systemContext =
           buildSystemInstruction(
             categories,
@@ -163,6 +178,7 @@ class GeminiBillChatService(
             CurrencyPreferenceStore.getCurrency(),
             pendingCurrencyProposal,
             contextMode,
+            webSearchEnabled,
           ) +
             if (attachedImageBase64 != null) IMAGE_ATTACHMENT_NOTE else ""
 
@@ -212,6 +228,8 @@ class GeminiBillChatService(
                 temperature = 0.3f,
                 thinkingConfig = thinkingLevel?.let { GeminiThinkingConfig(thinkingLevel = it) },
               ),
+            // Google Search only when the user turned it on in Settings.
+            tools = if (webSearchEnabled) listOf(GeminiTool(googleSearch = GeminiGoogleSearch())) else emptyList(),
           )
 
         val candidateModels = buildOrderedCandidateModels(preferredModel)
@@ -220,8 +238,7 @@ class GeminiBillChatService(
         for ((index, modelId) in candidateModels.withIndex()) {
           try {
             val response = api.generateChatReply(model = modelId, apiKey = apiKey, request = jsonRequest)
-            val rawText =
-              response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
+            val rawText = extractReplyText(response, joinAllParts = webSearchEnabled)
             if (!rawText.isNullOrBlank()) {
               lastHealthyChatModel = modelId
               return@runCatching parseReplySafely(rawText)
@@ -258,13 +275,15 @@ class GeminiBillChatService(
             val plainRequest =
               jsonRequest.copy(
                 // Keep the JSON mime type and thinking level, only soften
-                // the temperature for this last-resort attempt.
+                // the temperature for this last-resort attempt. Tools are
+                // dropped here: if a model rejected the search tool, the
+                // user still gets an answer (just without live web data).
                 generationConfig = jsonRequest.generationConfig?.copy(temperature = 0.35f),
+                tools = emptyList(),
               )
             val response =
               api.generateChatReply(model = fallbackModel, apiKey = apiKey, request = plainRequest)
-            val rawText =
-              response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
+            val rawText = extractReplyText(response, joinAllParts = false)
             if (!rawText.isNullOrBlank()) {
               lastHealthyChatModel = fallbackModel
               return@runCatching parseReplySafely(rawText)
@@ -331,6 +350,21 @@ class GeminiBillChatService(
     return IllegalStateException(
       error?.localizedMessage ?: "تعذر استلام رد من المساعد الذكي، يرجى إعادة المحاولة."
     )
+  }
+
+  /**
+   * The reply text of the first candidate. Normally the reply is one part; a search-grounded reply
+   * can arrive split into several text parts, which are joined in order.
+   */
+  private fun extractReplyText(response: GeminiChatResponse, joinAllParts: Boolean): String? {
+    val parts = response.candidates.firstOrNull()?.content?.parts.orEmpty()
+    val text =
+      if (joinAllParts) {
+        parts.mapNotNull { it.text }.joinToString("")
+      } else {
+        parts.firstOrNull()?.text
+      }
+    return text?.trim()
   }
 
   private fun parseReplySafely(rawText: String): BillChatAiReplyDto {
@@ -449,11 +483,12 @@ class GeminiBillChatService(
     currentDefaultCurrency: String,
     pendingCurrencyProposal: CurrencyProposal?,
     contextMode: ChatContextMode,
+    webSearchEnabled: Boolean,
   ): String = buildString {
     appendLine("أنت «المساعد الذكي» (مدعوم بـ Gemini)، مستشار مالي وتحليلي خبير داخل تطبيق أندرويد «فواتيري» لإدارة الفواتير المنزلية.")
     appendLine("مهمتك الأساسية:")
     appendLine("1) الإجابة بالعربية الواضحة والمنظمة عن أي سؤال يخص فواتير ومصاريف المستخدم المسجلة (كهرباء، مياه، غاز، إنترنت، اتصالات، تسوق ومقاضي، مطاعم، صيانة، وقود، وغيرها).")
-    appendLine("2) إعداد إحصائيات دقيقة ومقارنات شهرية وتحليل أسباب التفاوت في القيمة المالية أو كمية الاستهلاك بناءً على البيانات الفعلية أدناه فقط دون اختلاق أرقام غير موجودة.")
+    appendLine("2) إعداد إحصائيات دقيقة ومقارنات شهرية وتحليل أسباب التفاوتات في القيمة المالية أو كمية الاستهلاك بناءً على البيانات الفعلية أدناه فقط دون اختلاق أرقام غير موجودة.")
     appendLine("3) عندما يطلب المستخدم إحصائية أو مقارنة رقمية أو تحليلاً للبيانات، قم بتعبئة مصفوفة highlights (بأهم المؤشرات الرقمية) ومصفوفة chartBars مع chartTitle (برسم بياني مبسط للقيم المقارنة) إلى جانب الشرح النصي في replyText.")
     appendLine("4) مساعدة المستخدم في شرح مزايا التطبيق وكيفية استخدامها:")
     appendLine("   - تبويب «الفواتير»: إنشاء أقسام مخصصة باسم حر (مثل فاتورة الغاز أو فواتير التسوق) وتحديد وحدة القياس ونسبة تنبيه التفاوت (مثلاً 25%)، والدخول لأي قسم لإضافة فواتير شهرية بتاريخ مستقل أو تعديلها.")
@@ -469,7 +504,11 @@ class GeminiBillChatService(
     appendLine("- أجب عن الأسئلة العامة البسيطة (الوقت، التاريخ، اليوم، البلد، الحساب، المعلومات العامة) إجابة مباشرة وصحيحة وقصيرة، ثم اعرض المساعدة في الفواتير بجملة قصيرة فقط عند الحاجة دون تكرار تعريف نفسك أو دورك في كل رد.")
     appendLine("- في أسئلة الوقت والتاريخ والبلد اعتمد حصراً على كتلة «الوقت والمكان الآن» أعلاه، ولا تخمّن ولا تستنتج الوقت أو البلد من العملة أو من لغة المحادثة. وإذا تعارض ما قيل سابقاً في المحادثة مع هذه الكتلة فالكتلة هي الصحيحة.")
     appendLine("- إذا قال لك المستخدم إن معلومة خاطئة، أعد الحساب من الكتلة المذكورة وأجب بالقيمة الصحيحة مباشرة دون اعتذار مطوّل.")
-    appendLine("- لا تملك وصولاً للإنترنت: لا تدّعِ معرفة الطقس أو الأسعار الحية أو الأخبار الحالية؛ قل ذلك بوضوح واقترح مصدراً مناسباً.")
+    if (webSearchEnabled) {
+      appendLine("- لديك أداة بحث Google مفعّلة من إعدادات المستخدم: استخدمها فقط للمعلومات الحية التي لا تعرفها (الطقس، الأخبار، الأسعار، أسعار الصرف، نتائج المباريات). لا تبحث عن الوقت أو التاريخ أو البلد لأن الكتلة أعلاه كافية، ولا تبحث في أسئلة الفواتير أو التطبيق. عند الاعتماد على البحث اذكر ذلك في جملة قصيرة، واحفظ الرد بصيغة JSON المطلوبة نفسها دون روابط طويلة.")
+    } else {
+      appendLine("- لا تملك وصولاً للإنترنت: لا تدّعِ معرفة الطقس أو الأسعار الحية أو الأخبار الحالية؛ قل ذلك بوضوح واقترح مصدراً مناسباً، وأخبره أنه يمكنه تفعيل «البحث في الإنترنت» من الإعدادات للمعلومات الحية.")
+    }
     appendLine()
     if (contextMode != ChatContextMode.MINIMAL) {
       appendLine("=== تغيير العملة الافتراضية من المحادثة ===")

@@ -2,6 +2,8 @@ package com.example.data.remote
 
 import com.example.data.model.BillCategory
 import com.example.data.model.BillRecord
+import java.util.Calendar
+import java.util.Locale
 
 /** How much bill data the next assistant turn needs. */
 enum class ChatContextMode {
@@ -46,15 +48,23 @@ data class ChatContextSelection(
  * Matching is done on a normalized prompt (hamza/taa-marbuta/ya variants
  * unified, diacritics stripped) so spelling differences do not break
  * category detection.
+ *
+ * A question that names a period (a month, "last 3 months", "this year",
+ * "summer"...) gets only the bills inside that period, optionally limited
+ * to the category it names.
  */
 object ChatContextSelector {
 
   private const val FULL_TYPING_LABEL = "جارٍ تحليل بيانات الفواتير وإعداد الإجابة..."
   private const val ANALYTICS_TYPING_LABEL = "جارٍ تحليل بيانات الفواتير وإعداد الإجابة..."
   private const val TARGETED_TYPING_LABEL = "جارٍ جلب الفاتورة المطلوبة..."
+  private const val RANGE_TYPING_LABEL = "جارٍ جلب فواتير الفترة المطلوبة..."
   private const val LIST_TYPING_LABEL = "جارٍ جلب فواتيرك..."
   private const val CURRENCY_TYPING_LABEL = "جارٍ تجهيز إعداد العملة..."
   private const val MINIMAL_TYPING_LABEL = "جارٍ إعداد الإجابة..."
+
+  /** Most bills printed for one period question (the service prints at most 40 anyway). */
+  private const val MAX_RANGE_BILLS = 30
 
   // Utility-type key -> Arabic words that name it in a question. Mirrors the
   // vocabulary UtilityType.fromKey already recognises.
@@ -114,11 +124,77 @@ object ChatContextSelector {
 
   private val HELP_KEYWORDS = listOf("كيف", "طريقه", "شرح", "ازاي", "خطوات")
 
+  /**
+   * Words that show the question is about what is INSIDE a bill (its line items, readings, fees,
+   * provider). Only then are the full per-bill details worth sending when many bills are listed.
+   */
+  private val ITEM_DETAIL_KEYWORDS =
+    listOf(
+      "بند",
+      "بنود",
+      "تفصيل",
+      "تفاصيل",
+      "رسوم",
+      "ضريب",
+      "غرام",
+      "جهه",
+      "مزود",
+      "مصدر",
+      "قراءه",
+      "عداد",
+      "شيت",
+      "sheet",
+    )
+
   private val CONFIRM_WORDS =
     setOf("نعم", "موافق", "اكيد", "تمام", "ايوه", "اي", "اوافق", "غيرها", "طبقها")
 
   private val REFUSE_WORDS =
     setOf("لا", "لا اريد", "مش موافق", "الغي", "الغاء", "لا تغير", "بلاش")
+
+  // Month names (Gregorian: Egyptian/Gulf and Levantine spellings), normalized like the prompt.
+  // Two-word names come first so "كانون الثاني" is never read as something shorter.
+  private val MONTH_NAMES =
+    listOf(
+      "كانون الثاني" to 1,
+      "كانون الاول" to 12,
+      "تشرين الاول" to 10,
+      "تشرين الثاني" to 11,
+      "يناير" to 1,
+      "فبراير" to 2,
+      "مارس" to 3,
+      "ابريل" to 4,
+      "مايو" to 5,
+      "يونيو" to 6,
+      "يوليو" to 7,
+      "اغسطس" to 8,
+      "سبتمبر" to 9,
+      "اكتوبر" to 10,
+      "نوفمبر" to 11,
+      "ديسمبر" to 12,
+      "شباط" to 2,
+      "اذار" to 3,
+      "نيسان" to 4,
+      "ايار" to 5,
+      "حزيران" to 6,
+      "تموز" to 7,
+      "ايلول" to 9,
+    )
+
+  private val NUMBER_WORDS =
+    mapOf(
+      "ثلاثه" to 3,
+      "ثلاث" to 3,
+      "اربعه" to 4,
+      "اربع" to 4,
+      "خمسه" to 5,
+      "خمس" to 5,
+      "سته" to 6,
+      "ست" to 6,
+    )
+
+  /** An inclusive period in ISO dates (yyyy-MM-dd), compared as text against a bill's billDateIso. */
+  private data class DateRange(val fromIso: String, val toIso: String)
 
   /** Short explicit confirmations ("yes", "agreed") that answer a pending question. */
   fun isConfirmationPrompt(prompt: String): Boolean {
@@ -184,6 +260,16 @@ object ChatContextSelector {
     return true
   }
 
+  /**
+   * Whether the question is about what is inside a bill (items, readings, fees, provider). When
+   * many bills are listed, only such questions get the full per-bill details; the others get a
+   * short line per bill (date, category, amount, consumption).
+   */
+  fun needsItemDetails(prompt: String): Boolean {
+    val normalized = normalize(prompt)
+    return ITEM_DETAIL_KEYWORDS.any { normalized.contains(it) }
+  }
+
   fun select(
     userPrompt: String,
     categories: List<BillCategory>,
@@ -209,8 +295,31 @@ object ChatContextSelector {
       return currencySelection()
     }
 
-    val isRecent = prompt.contains("اخر") || prompt.contains("احدث") || prompt.contains("جديد")
     val matchedCategory = matchCategory(prompt, categories)
+
+    // A question about a period ("September", "last 3 months", "this year", "summer"): only the
+    // bills inside it, limited to the named category when there is one. This comes before the
+    // "latest bill" and statistics branches because "آخر 3 أشهر" is a period, not one bill,
+    // and a statistic over a period needs those bills one by one.
+    val range = detectDateRange(userPrompt)
+    if (range != null) {
+      val scopeBills =
+        if (matchedCategory != null) allBills.filter { it.categoryId == matchedCategory.id } else allBills
+      val inRange =
+        scopeBills
+          .filter { it.billDateIso >= range.fromIso && it.billDateIso <= range.toIso }
+          .sortedByDescending { it.billDateEpochMillis }
+          .take(MAX_RANGE_BILLS)
+      return ChatContextSelection(
+        ChatContextMode.TARGETED,
+        if (matchedCategory != null) listOf(matchedCategory) else categories,
+        scopeBills,
+        inRange,
+        RANGE_TYPING_LABEL,
+      )
+    }
+
+    val isRecent = prompt.contains("اخر") || prompt.contains("احدث") || prompt.contains("جديد")
     val isAnalytics = ANALYTICS_KEYWORDS.any { prompt.contains(it) }
 
     // "Latest bill" questions: print exactly one bill, never the whole category.
@@ -329,6 +438,114 @@ object ChatContextSelector {
       .sortedByDescending { it.billDateEpochMillis }
       .take(limit)
   }
+
+  /**
+   * The period a question names, or null when it names none. Understood, in this order: a month
+   * name (with an optional year), "last N months" (آخر 3 أشهر / آخر شهرين), this month, last
+   * month, this year, last year, a bare year such as 2025, and summer. A month name without a year
+   * means its most recent occurrence.
+   */
+  private fun detectDateRange(rawPrompt: String, now: Calendar = Calendar.getInstance()): DateRange? {
+    val prompt = normalize(toAsciiDigits(rawPrompt))
+    val curYear = now.get(Calendar.YEAR)
+    val curMonth = now.get(Calendar.MONTH) + 1
+    val explicitYear = Regex("20\\d\\d").find(prompt)?.value?.toIntOrNull()
+
+    // 1. A named month.
+    val named = MONTH_NAMES.firstOrNull { (name, _) -> prompt.contains(name) }
+    if (named != null) {
+      val month = named.second
+      val year = explicitYear ?: if (month <= curMonth) curYear else curYear - 1
+      return monthRange(year, month)
+    }
+
+    // 2. "Last N months": a number or number word followed by a month word.
+    val lastN =
+      Regex("اخر\\s+(?:(\\d+)\\s*(?:اشهر|شهور|شهر)|(شهرين)|(ثلاثه|ثلاث|اربعه|اربع|خمسه|خمس|سته|ست)\\s*(?:اشهر|شهور|شهر))")
+        .find(prompt)
+    if (lastN != null) {
+      val digits = lastN.groupValues[1]
+      val months =
+        when {
+          digits.isNotEmpty() -> digits.toIntOrNull()
+          lastN.groupValues[2].isNotEmpty() -> 2
+          else -> NUMBER_WORDS[lastN.groupValues[3]]
+        }
+      if (months != null && months in 1..24) {
+        val start = (now.clone() as Calendar).apply { add(Calendar.MONTH, -months) }
+        return DateRange(isoDate(start), isoDate(now))
+      }
+    }
+
+    // 3. This month / last month.
+    if (
+      prompt.contains("الشهر الماضي") || prompt.contains("الشهر السابق") ||
+        prompt.contains("الشهر اللي فات")
+    ) {
+      val year = if (curMonth == 1) curYear - 1 else curYear
+      val month = if (curMonth == 1) 12 else curMonth - 1
+      return monthRange(year, month)
+    }
+    if (
+      prompt.contains("هذا الشهر") || prompt.contains("الشهر الحالي") ||
+        prompt.contains("الشهر دا") || prompt.contains("الشهر ده")
+    ) {
+      return monthRange(curYear, curMonth)
+    }
+
+    // 4. Years.
+    if (
+      prompt.contains("السنه الماضيه") || prompt.contains("العام الماضي") ||
+        prompt.contains("السنه السابقه") || prompt.contains("العام السابق")
+    ) {
+      return yearRange(curYear - 1)
+    }
+    if (
+      prompt.contains("هذه السنه") || prompt.contains("هذا العام") ||
+        prompt.contains("السنه دي") || prompt.contains("السنه الحاليه") ||
+        prompt.contains("العام الحالي")
+    ) {
+      return yearRange(curYear)
+    }
+    if (explicitYear != null) {
+      return yearRange(explicitYear)
+    }
+
+    // 5. Summer (June to August) of its most recent occurrence.
+    if (prompt.contains("الصيف")) {
+      val year = if (curMonth >= 6) curYear else curYear - 1
+      return DateRange("$year-06-01", "$year-08-31")
+    }
+
+    return null
+  }
+
+  private fun monthRange(year: Int, month: Int): DateRange {
+    val from = String.format(Locale.US, "%04d-%02d-01", year, month)
+    // Day 31 is only an upper bound for the text comparison; no month has later dates.
+    val to = String.format(Locale.US, "%04d-%02d-31", year, month)
+    return DateRange(from, to)
+  }
+
+  private fun yearRange(year: Int): DateRange =
+    DateRange(String.format(Locale.US, "%04d-01-01", year), String.format(Locale.US, "%04d-12-31", year))
+
+  private fun isoDate(calendar: Calendar): String =
+    String.format(
+      Locale.US,
+      "%04d-%02d-%02d",
+      calendar.get(Calendar.YEAR),
+      calendar.get(Calendar.MONTH) + 1,
+      calendar.get(Calendar.DAY_OF_MONTH),
+    )
+
+  /** Arabic-Indic digits (٠-٩) to ASCII, so "٢٠٢٥" and "٣ أشهر" are understood. */
+  private fun toAsciiDigits(text: String): String =
+    buildString(text.length) {
+      for (ch in text) {
+        append(if (ch in '\u0660'..'\u0669') '0' + (ch - '\u0660') else ch)
+      }
+    }
 
   private fun normalize(text: String): String {
     return text

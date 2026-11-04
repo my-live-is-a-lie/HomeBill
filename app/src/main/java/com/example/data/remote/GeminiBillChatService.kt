@@ -9,7 +9,12 @@ import com.example.domain.MonthlyAnalyticsSummary
 import com.example.util.AssistantImageBridge
 import com.example.util.DateAndFormatUtils
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
+import kotlin.math.abs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -377,6 +382,65 @@ class GeminiBillChatService(
     return text.replace("**", "").replace("### ", "").replace("## ", "").trim()
   }
 
+  /**
+   * The user's current date, time, time zone and country, read from the phone. The model has no
+   * clock and no location of its own, so without this block it invents an answer to "what time is
+   * it?" or "which country am I in?". The country is derived from the phone's time zone (more
+   * reliable than the language setting), with the language region as a fallback.
+   */
+  private fun buildDeviceContext(): String {
+    val now = System.currentTimeMillis()
+    val zone = TimeZone.getDefault()
+    val arabic = Locale.forLanguageTag("ar")
+
+    val offsetMinutes = zone.getOffset(now) / 60_000
+    val absOffset = abs(offsetMinutes)
+    val utcOffset =
+      String.format(
+        Locale.US,
+        "UTC%s%02d:%02d",
+        if (offsetMinutes < 0) "-" else "+",
+        absOffset / 60,
+        absOffset % 60,
+      )
+
+    val dateText =
+      SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = zone }.format(Date(now))
+    val dayName = SimpleDateFormat("EEEE", arabic).apply { timeZone = zone }.format(Date(now))
+
+    val calendar = Calendar.getInstance(zone).apply { timeInMillis = now }
+    val hour24 = calendar.get(Calendar.HOUR_OF_DAY)
+    val minute = calendar.get(Calendar.MINUTE)
+    val hour12 = if (hour24 % 12 == 0) 12 else hour24 % 12
+    val period = if (hour24 < 12) "صباحاً" else "مساءً"
+    val clock24 = String.format(Locale.US, "%02d:%02d", hour24, minute)
+    val clock12 = String.format(Locale.US, "%d:%02d %s", hour12, minute, period)
+
+    val region =
+      runCatching { android.icu.util.TimeZone.getRegion(zone.id) }
+        .getOrNull()
+        ?.takeIf { it.length == 2 && it != "ZZ" }
+        ?: Locale.getDefault().country.takeIf { it.length == 2 }
+    val countryName =
+      region
+        ?.let { code ->
+          runCatching { Locale.Builder().setRegion(code).build().getDisplayCountry(arabic) }
+            .getOrNull()
+        }
+        ?.takeIf { it.isNotBlank() }
+
+    return buildString {
+      appendLine("=== الوقت والمكان الآن (مأخوذة من هاتف المستخدم، مرجع موثوق) ===")
+      appendLine("- التاريخ: $dateText ($dayName)")
+      appendLine("- الوقت المحلي الحالي: $clock24 (أي $clock12)")
+      appendLine("- المنطقة الزمنية: ${zone.id} ($utcOffset)")
+      if (countryName != null) {
+        appendLine("- بلد المستخدم حسب منطقة هاتفه الزمنية: $countryName")
+      }
+      appendLine()
+    }
+  }
+
   private fun buildSystemInstruction(
     categories: List<BillCategory>,
     allBills: List<BillRecord>,
@@ -386,7 +450,7 @@ class GeminiBillChatService(
     pendingCurrencyProposal: CurrencyProposal?,
     contextMode: ChatContextMode,
   ): String = buildString {
-    appendLine("أنت «مساعد فواتيري الذكي» (مدعوم بـ Gemini)، مستشار مالي وتحليلي خبير داخل تطبيق أندرويد «فواتيري» لإدارة الفواتير المنزلية.")
+    appendLine("أنت «المساعد الذكي» (مدعوم بـ Gemini)، مستشار مالي وتحليلي خبير داخل تطبيق أندرويد «فواتيري» لإدارة الفواتير المنزلية.")
     appendLine("مهمتك الأساسية:")
     appendLine("1) الإجابة بالعربية الواضحة والمنظمة عن أي سؤال يخص فواتير ومصاريف المستخدم المسجلة (كهرباء، مياه، غاز، إنترنت، اتصالات، تسوق ومقاضي، مطاعم، صيانة، وقود، وغيرها).")
     appendLine("2) إعداد إحصائيات دقيقة ومقارنات شهرية وتحليل أسباب التفاوت في القيمة المالية أو كمية الاستهلاك بناءً على البيانات الفعلية أدناه فقط دون اختلاق أرقام غير موجودة.")
@@ -397,7 +461,15 @@ class GeminiBillChatService(
     appendLine("   - ميزة الـ Sheet والتصدير: كل فاتورة تحتوي على جدول بنود تفصيلي (Sheet) يمكن استعراضه ومقارنته بنداً ببند مع الفاتورة السابقة وتصديره كملف CSV متوافق مع Excel وGoogle Sheets.")
     appendLine("   - تبويب «الإحصائيات»: يعرض مخطط الأعمدة الشهري المكدس، ومخطط التوزيع الدائري للمرافق، ومنحنى تتبع التكلفة والاستهلاك لكل فئة.")
     appendLine("5) أعد الإجابة دائماً ككائن JSON صالح واحد فقط بالهيكل التالي دون نص خارجي:")
-    appendLine("""{"replyText":"الشرح بالعربية مع نقاط • واضحة وبدون **","highlights":[{"label":"عنوان المؤشر","value":"القيمة","trend":"+0%"}],"chartTitle":"عنوان الرسم البياني أو نص فارغ","chartBars":[{"label":"البند","value":120.5,"unit":"ر.س"}],"followUpSuggestions":["سؤال مقترح 1","سؤال مقترح 2"],"currencyAction":"","currencyLabel":"","currencySymbol":""}""")
+    appendLine("""{"replyText":"الشرح بالعربية مع نقاط • واضحة وبدون **","highlights":[{"label":"عنوان المؤشر","value":"القيمة","trend":"+0%"}],"chartTitle":"عنوان الرسم البياني أو نص فارغ","chartBars":[{"label":"البند","value":120.5,"unit":"$currentDefaultCurrency"}],"followUpSuggestions":["سؤال مقترح 1","سؤال مقترح 2"],"currencyAction":"","currencyLabel":"","currencySymbol":""}""")
+    appendLine()
+    // Current date, time, time zone and country: always sent, whatever the context mode.
+    appendLine(buildDeviceContext())
+    appendLine("=== الأسئلة العامة (غير المتعلقة بالفواتير) ===")
+    appendLine("- أجب عن الأسئلة العامة البسيطة (الوقت، التاريخ، اليوم، البلد، الحساب، المعلومات العامة) إجابة مباشرة وصحيحة وقصيرة، ثم اعرض المساعدة في الفواتير بجملة قصيرة فقط عند الحاجة دون تكرار تعريف نفسك أو دورك في كل رد.")
+    appendLine("- في أسئلة الوقت والتاريخ والبلد اعتمد حصراً على كتلة «الوقت والمكان الآن» أعلاه، ولا تخمّن ولا تستنتج الوقت أو البلد من العملة أو من لغة المحادثة. وإذا تعارض ما قيل سابقاً في المحادثة مع هذه الكتلة فالكتلة هي الصحيحة.")
+    appendLine("- إذا قال لك المستخدم إن معلومة خاطئة، أعد الحساب من الكتلة المذكورة وأجب بالقيمة الصحيحة مباشرة دون اعتذار مطوّل.")
+    appendLine("- لا تملك وصولاً للإنترنت: لا تدّعِ معرفة الطقس أو الأسعار الحية أو الأخبار الحالية؛ قل ذلك بوضوح واقترح مصدراً مناسباً.")
     appendLine()
     if (contextMode != ChatContextMode.MINIMAL) {
       appendLine("=== تغيير العملة الافتراضية من المحادثة ===")

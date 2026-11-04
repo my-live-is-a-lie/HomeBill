@@ -67,7 +67,7 @@
     <!-- Category Detail Screen -->
     <string name="add_monthly_bill">إضافة فاتورة</string>
     <string name="scan_for_category">تصوير فاتورة</string>
-    <string name="export_category_sheet">تصدير كشف Sheet</string>
+    <string name="export_category_sheet">تصدير كشف الجدول</string>
     <string name="delete_category_confirm_title">حذف قسم الفاتورة؟</string>
     <string name="delete_category_confirm_body">سيتم حذف هذا القسم وجميع الفواتير الشهرية المسجلة بداخله نهائياً.</string>
     <string name="category_avg_monthly">المتوسط الشهري</string>
@@ -78,7 +78,7 @@
 
     <!-- Manual / Edit Bill Form -->
     <string name="form_add_bill_title">إضافة فاتورة</string>
-    <string name="form_edit_bill_title">تعديل بيانات الفاتورة والـ Sheet</string>
+    <string name="form_edit_bill_title">تعديل بيانات الفاتورة والجدول</string>
     <string name="field_bill_date">تاريخ الفاتورة</string>
     <string name="pick_date_button">اختيار التاريخ</string>
     <string name="field_total_amount">القيمة المالية الإجمالية</string>
@@ -90,30 +90,29 @@
     <string name="field_invoice_number">رقم الفاتورة / الحساب</string>
     <string name="field_provider_name">الجهة المصدرة</string>
     <string name="field_notes">ملاحظات</string>
-    <string name="sheet_rows_section_title">جدول تفاصيل الفاتورة (Sheet)</string>
+    <string name="sheet_rows_section_title">جدول تفاصيل الفاتورة</string>
     <string name="add_sheet_row">إضافة بند للجدول</string>
     <string name="field_row_label">البند (مثل: رسوم الخدمة)</string>
     <string name="field_row_value">القيمة</string>
     <string name="field_row_unit">الوحدة</string>
 
     <!-- Scanner & AI Extraction -->
-    <string name="scanner_title">مسح الفاتورة واستخراج الـ Sheet</string>
+    <string name="scanner_title">مسح الفاتورة واستخراج الجدول</string>
     <string name="scanner_subtitle">التقط صورة واضحة للفاتورة أو اخترها من المعرض ليقوم الذكاء الاصطناعي بقراءة النص وتحديد الفئة والتاريخ والقيم وبناء جدول كامل بالتفاصيل.</string>
     <string name="take_photo_camera">تصوير بالكاميرا</string>
     <string name="pick_photo_gallery">اختيار صورة فاتورة</string>
     <string name="camera_permission_denied">يلزم منح إذن الكاميرا لالتقاط صورة الفاتورة، أو يمكنك تفعيل الإذن من إعدادات التطبيق أو اختيار صورة من المعرض مباشرة.</string>
-    <string name="camera_permission_ready">صلاحية الكاميرا مفعّلة — جاهز لمسح الفاتورة</string>
     <string name="camera_permission_rationale_title">مطلوب إذن الوصول إلى الكاميرا</string>
-    <string name="camera_permission_rationale_body">يحتاج التطبيق إلى صلاحية الكاميرا لتصوير الفاتورة المنزلية واستخراج النص والتاريخ والقيم تلقائياً في جدول تفاصيل (Sheet).</string>
+    <string name="camera_permission_rationale_body">يحتاج التطبيق إلى صلاحية الكاميرا لتصوير الفاتورة المنزلية واستخراج النص والتاريخ والقيم تلقائياً في جدول التفاصيل.</string>
     <string name="camera_permission_grant_action">منح صلاحية الكاميرا</string>
     <string name="camera_permission_open_settings">تفعيل الكاميرا من إعدادات التطبيق</string>
     <string name="scanning_in_progress">جارٍ قراءة نص الفاتورة واستخراج جدول التفاصيل...</string>
-    <string name="scan_result_sheet_title">جدول تفاصيل الفاتورة المستخرج (Sheet)</string>
+    <string name="scan_result_sheet_title">جدول تفاصيل الفاتورة المستخرج</string>
     <string name="detected_category_label">التصنيف المكتشف تلقائياً:</string>
     <string name="target_category_label">سيتم الحفظ في قسم:</string>
     <string name="auto_create_category_badge">سيتم إنشاء القسم تلقائياً</string>
     <string name="extracted_raw_text_label">النص الكامل المستخرج من الصورة</string>
-    <string name="confirm_save_scanned_bill">اعتماد الـ Sheet وإضافته لقائمة الفواتير</string>
+    <string name="confirm_save_scanned_bill">اعتماد الجدول وإضافته لقائمة الفواتير</string>
     <string name="rescan_button">مسح صورة أخرى</string>
     <string name="retry_scan_button">إعادة محاولة الاستخراج</string>
     <string name="field_store_name">اسم المتجر / الجهة المصدرة</string>
@@ -126,10 +125,10 @@
     <string name="reclassifying_in_progress">جارٍ تصنيف نوع المصروف عبر Gemini...</string>
 
     <!-- Bill Sheet & Comparison -->
-    <string name="view_bill_sheet">عرض الـ Sheet</string>
+    <string name="view_bill_sheet">عرض الجدول</string>
     <string name="compare_previous_bill">مقارنة بالسابقة</string>
-    <string name="export_single_sheet_csv">تصدير Sheet (CSV)</string>
-    <string name="bill_sheet_modal_title">ورقة تفاصيل الفاتورة (Sheet)</string>
+    <string name="export_single_sheet_csv">تصدير الجدول (CSV)</string>
+    <string name="bill_sheet_modal_title">ورقة تفاصيل الفاتورة</string>
     <string name="sheet_col_item">البند / التفصيل</string>
     <string name="sheet_col_value">القيمة المستخرجة</string>
     <string name="sheet_col_unit">الوحدة</string>
@@ -179,7 +178,7 @@
     <string name="assistant_quick_stats">إحصائية شاملة لفواتيري</string>
     <string name="assistant_quick_spikes">تحليل أسباب ارتفاع التكاليف</string>
     <string name="assistant_quick_saving">نصائح لخفض الاستهلاك</string>
-    <string name="assistant_quick_help">كيف أستخدم التطبيق والـ Sheet؟</string>
+    <string name="assistant_quick_help">كيف أستخدم التطبيق والجدول؟</string>
     <string name="assistant_retry_button">إعادة المحاولة</string>
 
     <!-- Bill History Search -->

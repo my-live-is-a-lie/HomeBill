@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Palette
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Download
@@ -92,6 +93,7 @@ import com.example.ui.viewmodel.ChatImportResult
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.example.R
+import com.example.data.AssistantWebSearchStore
 import com.example.data.CurrencyPreferenceStore
 import com.example.data.remote.UserGeminiKeyStore
 import kotlinx.coroutines.launch
@@ -130,6 +132,8 @@ private fun SettingsHubScreen(
 ) {
   val context = LocalContext.current
   var preferredCurrency by remember { mutableStateOf(CurrencyPreferenceStore.getCurrency(context)) }
+  // Read after the line above: getCurrency(context) also initialises the web-search store.
+  var webSearchEnabled by remember { mutableStateOf(AssistantWebSearchStore.isEnabled()) }
   var showCurrencyDialog by remember { mutableStateOf(false) }
   var pendingExportJson by remember { mutableStateOf<String?>(null) }
   val exportLauncher =
@@ -208,6 +212,36 @@ private fun SettingsHubScreen(
         }
       }
     }
+    // Optional Google Search for the assistant (off by default: each search is billed to the
+    // user's own Gemini key and makes that reply slower).
+    Card(modifier = Modifier.fillMaxWidth()) {
+      Row(
+        modifier =
+          Modifier.fillMaxWidth()
+            .toggleable(
+              value = webSearchEnabled,
+              role = Role.Switch,
+              onValueChange = { enabled ->
+                webSearchEnabled = enabled
+                AssistantWebSearchStore.setEnabled(enabled, context)
+              },
+            )
+            .padding(16.dp)
+            .testTag("web_search_toggle"),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Icon(imageVector = Icons.Default.Public, contentDescription = null)
+        Column(modifier = Modifier.weight(1f)) {
+          Text(text = "البحث في الإنترنت", style = MaterialTheme.typography.titleMedium)
+          Text(
+            text = "يسمح للمساعد بالبحث في Google للإجابة عن الطقس والأخبار والأسعار. يُحاسَب كل بحث على مفتاح Gemini الخاص بك وقد يؤخّر بعض الردود، لذلك هو مغلق افتراضياً.",
+            style = MaterialTheme.typography.bodyMedium,
+          )
+        }
+        Switch(checked = webSearchEnabled, onCheckedChange = null)
+      }
+    }
     if (showCurrencyDialog) {
       CurrencyPickerDialog(
         current = preferredCurrency,
@@ -246,7 +280,7 @@ private fun SettingsHubScreen(
       ) {
         Text(text = "النسخ الاحتياطي للمحادثات", style = MaterialTheme.typography.titleMedium)
         Text(
-          text = "صدّر جميع محادثاتك المحفوظة إلى ملف JSON، أو استعد نسخة احتياطية سابقة. المحادثات المؤقتة والمسودات التي لم تصلها ردود بعد لا تُصدَّر.",
+          text = "صدّر جميع محادثاتك المحفوظة إلى ملف JSON، أو استعد نسخة احتياطية سابقة. المحادثات المؤقتة والمسودات التي لم تصلها ردود بعد لا تُصدَّر.",
           style = MaterialTheme.typography.bodyMedium,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

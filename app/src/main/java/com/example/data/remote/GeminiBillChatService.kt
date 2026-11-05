@@ -498,9 +498,10 @@ class GeminiBillChatService(
     appendLine("3) عندما يطلب المستخدم إحصائية أو مقارنة رقمية أو تحليلاً للبيانات، قم بتعبئة مصفوفة highlights (بأهم المؤشرات الرقمية) ومصفوفة chartBars مع chartTitle (برسم بياني مبسط للقيم المقارنة) إلى جانب الشرح النصي في replyText.")
     appendLine("4) مساعدة المستخدم في شرح مزايا التطبيق وكيفية استخدامها:")
     appendLine("   - تبويب «الفواتير»: إنشاء أقسام مخصصة باسم حر (مثل فاتورة الغاز أو فواتير التسوق) وتحديد وحدة القياس ونسبة تنبيه التفاوت (مثلاً 25%)، والدخول لأي قسم لإضافة فواتير شهرية بتاريخ مستقل أو تعديلها.")
-    appendLine("   - تبويب «مسح فاتورة»: تصوير الفاتورة عبر ماسح CameraX المدمج أو اختيار صورة من المعرض؛ يقوم Gemini باستخراج النص الكامل والتصنيف التلقائي لنوع المصروف (كهرباء، مياه، تسوق، مطاعم، صيانة، وقود، غاز، إنترنت، اتصالات) بناءً على اسم المتجر والمحتوى، وبناء جدول تفاصيل متكامل (Sheet) وحفظه تلقائياً في القسم المناسب.")
-    appendLine("   - ميزة الـ Sheet والتصدير: كل فاتورة تحتوي على جدول بنود تفصيلي (Sheet) يمكن استعراضه ومقارنته بنداً ببند مع الفاتورة السابقة وتصديره كملف CSV متوافق مع Excel وGoogle Sheets.")
+    appendLine("   - تبويب «مسح فاتورة»: تصوير الفاتورة عبر ماسح CameraX المدمج أو اختيار صورة من المعرض؛ يقوم Gemini باستخراج النص الكامل والتصنيف التلقائي لنوع المصروف (كهرباء، مياه، تسوق، مطاعم، صيانة، وقود، غاز، إنترنت، اتصالات) بناءً على اسم المتجر والمحتوى، وبناء جدول تفاصيل متكامل وحفظه تلقائياً في القسم المناسب.")
+    appendLine("   - ميزة الجدول والتصدير: كل فاتورة تحتوي على جدول بنود تفصيلي يمكن استعراضه ومقارنته بنداً ببند مع الفاتورة السابقة وتصديره كملف CSV متوافق مع Excel وGoogle Sheets.")
     appendLine("   - تبويب «الإحصائيات»: يعرض مخطط الأعمدة الشهري المكدس، ومخطط التوزيع الدائري للمرافق، ومنحنى تتبع التكلفة والاستهلاك لكل فئة.")
+    appendLine("   - عند الإشارة إلى جدول الفاتورة قل «الجدول» ولا تكتب كلمة Sheet بالإنجليزية.")
     appendLine("5) أعد الإجابة دائماً ككائن JSON صالح واحد فقط بالهيكل التالي دون نص خارجي:")
     appendLine("""{"replyText":"الشرح بالعربية مع نقاط • واضحة وبدون **","highlights":[{"label":"عنوان المؤشر","value":"القيمة","trend":"+0%"}],"chartTitle":"عنوان الرسم البياني أو نص فارغ","chartBars":[{"label":"البند","value":120.5,"unit":"$currentDefaultCurrency"}],"followUpSuggestions":["سؤال مقترح 1","سؤال مقترح 2"],"currencyAction":"","currencyLabel":"","currencySymbol":""}""")
     appendLine()
@@ -544,7 +545,7 @@ class GeminiBillChatService(
     appendLine("- إجمالي الشهر الحالي/الأحدث: ${DateAndFormatUtils.formatMoney(summary.currentMonthTotal)} ${summary.primaryCurrency}")
     appendLine("- المتوسط الشهري العام: ${DateAndFormatUtils.formatMoney(summary.averageMonthlyCost)} ${summary.primaryCurrency}")
     summary.monthOverMonthChangePercent?.let { mom ->
-      appendLine("- نسبة التغيير عن الشهر السابق: ${String.format(Locale.US, "%+.1f%%", mom)}")
+      appendLine("- نسبة التغير عن الشهر السابق: ${String.format(Locale.US, "%+.1f%%", mom)}")
     }
     appendLine("- الفئة الأعلى تكلفة: ${summary.highestCategoryName}")
     appendLine("- عدد تنبيهات التفاوت النشطة: ${summary.activeAlerts.size}")
@@ -617,7 +618,7 @@ class GeminiBillChatService(
               "لا توجد بنود إضافية"
             }
           appendLine(
-            "• [${bill.billDateIso}] قسم «${bill.categoryName}» | المبلغ: ${DateAndFormatUtils.formatMoney(bill.totalAmount)} ${bill.currency} | الاستهلاك: ${DateAndFormatUtils.formatNumber(bill.consumptionValue)} ${bill.consumptionUnit} | القراءات: (${DateAndFormatUtils.formatNumber(bill.previousReading)} -> ${DateAndFormatUtils.formatNumber(bill.currentReading)}) | الجهة: ${bill.providerName.ifBlank { "—" }} | بنود الـ Sheet: [$sheetPreview]"
+            "• [${bill.billDateIso}] قسم «${bill.categoryName}» | المبلغ: ${DateAndFormatUtils.formatMoney(bill.totalAmount)} ${bill.currency} | الاستهلاك: ${DateAndFormatUtils.formatNumber(bill.consumptionValue)} ${bill.consumptionUnit} | القراءات: (${DateAndFormatUtils.formatNumber(bill.previousReading)} -> ${DateAndFormatUtils.formatNumber(bill.currentReading)}) | الجهة: ${bill.providerName.ifBlank { "—" }} | بنود الجدول: [$sheetPreview]"
           )
         }
       }

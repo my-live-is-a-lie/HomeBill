@@ -375,7 +375,7 @@ fun BillAssistantScreen(
       Triple(
         Icons.AutoMirrored.Filled.HelpOutline,
         stringResource(R.string.assistant_quick_help),
-        "اشرح لي كيف أستفيد من جميع مزايا تطبيق فواتيري ومسح الفاتورة واستخراج جدول الـ Sheet وتصدير CSV",
+        "اشرح لي كيف أستفيد من جميع مزايا تطبيق فواتيري ومسح الفاتورة واستخراج الجدول وتصدير CSV",
       ),
     )
 

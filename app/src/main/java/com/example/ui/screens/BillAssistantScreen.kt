@@ -75,7 +75,6 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
@@ -141,6 +140,7 @@ import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.model.BillCategory
 import com.example.data.remote.UserGeminiKeyStore
+import com.example.ui.components.AiThinkingIndicator
 import com.example.ui.components.AssistantIcons
 import com.example.ui.components.Dictation
 import com.example.ui.components.FullscreenImageViewer
@@ -375,7 +375,7 @@ fun BillAssistantScreen(
       Triple(
         Icons.AutoMirrored.Filled.HelpOutline,
         stringResource(R.string.assistant_quick_help),
-        "اشرح لي كيف أستفيد من جميع مزايا تطبيق فواتيري ومسح الفاتورة واستخراج جدول الـ Sheet وتصدير CSV",
+        "اشرح لي كيف أستفيد من جميع مزايا تطبيق فواتيري ومسح الفاتورة واستخراج الجدول وتصدير CSV",
       ),
     )
 
@@ -1953,27 +1953,14 @@ private fun ChatInlineBarChartCard(
   }
 }
 
+/**
+ * "The answer is being prepared" indicator: the animated sparkle, status label and shimmering
+ * placeholder lines live in [AiThinkingIndicator] (ui/components).
+ */
 @Composable
 private fun TypingIndicatorCard(typingLabel: String = "") {
-  Card(
-    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-    shape = MaterialTheme.shapes.large,
-  ) {
-    Row(
-      verticalAlignment = Alignment.CenterVertically,
-      modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-    ) {
-      CircularProgressIndicator(
-        modifier = Modifier.size(20.dp),
-        strokeWidth = 2.5.dp,
-        color = MaterialTheme.colorScheme.primary,
-      )
-      Spacer(modifier = Modifier.width(12.dp))
-      Text(
-        text = typingLabel.ifBlank { stringResource(R.string.assistant_typing) },
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-      )
-    }
-  }
+  AiThinkingIndicator(
+    label = typingLabel.ifBlank { stringResource(R.string.assistant_typing) },
+    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 10.dp),
+  )
 }

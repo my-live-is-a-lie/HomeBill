@@ -56,6 +56,8 @@ object CurrencyPreferenceStore {
       appContext = context.applicationContext
     }
     _currencyFlow.value = readStored()
+    // Other small on-device settings that must be ready at startup share this entry point.
+    AssistantWebSearchStore.init(context)
   }
 
   private fun prefs(context: Context? = null): SharedPreferences? {

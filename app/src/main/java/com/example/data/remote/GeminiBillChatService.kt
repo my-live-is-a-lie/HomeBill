@@ -1,6 +1,7 @@
 package com.example.data.remote
 
 import android.util.Log
+import com.example.data.AssistantWebSearchStore
 import com.example.data.CurrencyPreferenceStore
 import com.example.data.model.BillCategory
 import com.example.data.model.BillRecord
@@ -9,7 +10,12 @@ import com.example.domain.MonthlyAnalyticsSummary
 import com.example.util.AssistantImageBridge
 import com.example.util.DateAndFormatUtils
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
+import kotlin.math.abs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -30,11 +36,22 @@ data class GeminiChatTurn(
   val parts: List<GeminiPart>,
 )
 
+/** Empty settings object of Gemini's built-in Google Search tool; it serializes as `{}`. */
+@Serializable class GeminiGoogleSearch
+
+/** One entry of the request's `tools` list. Only Google Search is used, and only when enabled. */
+@Serializable
+data class GeminiTool(
+  val googleSearch: GeminiGoogleSearch? = null,
+)
+
 @Serializable
 data class GeminiChatRequest(
   val contents: List<GeminiChatTurn>,
   val generationConfig: GeminiGenerationConfig? = null,
   val systemInstruction: GeminiChatTurn? = null,
+  // Empty (the default) = no tools, exactly like before web search existed.
+  val tools: List<GeminiTool> = emptyList(),
 )
 
 @Serializable
@@ -149,6 +166,13 @@ class GeminiBillChatService(
         // A bill image the user sent from a bill screen (null = normal text-only chat).
         val attachedImageBase64 = AssistantImageBridge.currentAttachmentBase64()
 
+        // Read once so the instructions and the request tools always agree.
+        val webSearchEnabled = AssistantWebSearchStore.isEnabled()
+
+        // With many bills listed, send one short line per bill (date, category, amount,
+        // consumption) unless the question is about what is inside a bill.
+        val compactBills = detailBills.size > 5 && !ChatContextSelector.needsItemDetails(userPrompt)
+
         val systemContext =
           buildSystemInstruction(
             categories,
@@ -158,6 +182,8 @@ class GeminiBillChatService(
             CurrencyPreferenceStore.getCurrency(),
             pendingCurrencyProposal,
             contextMode,
+            webSearchEnabled,
+            compactBills,
           ) +
             if (attachedImageBase64 != null) IMAGE_ATTACHMENT_NOTE else ""
 
@@ -207,6 +233,8 @@ class GeminiBillChatService(
                 temperature = 0.3f,
                 thinkingConfig = thinkingLevel?.let { GeminiThinkingConfig(thinkingLevel = it) },
               ),
+            // Google Search only when the user turned it on in Settings.
+            tools = if (webSearchEnabled) listOf(GeminiTool(googleSearch = GeminiGoogleSearch())) else emptyList(),
           )
 
         val candidateModels = buildOrderedCandidateModels(preferredModel)
@@ -215,8 +243,7 @@ class GeminiBillChatService(
         for ((index, modelId) in candidateModels.withIndex()) {
           try {
             val response = api.generateChatReply(model = modelId, apiKey = apiKey, request = jsonRequest)
-            val rawText =
-              response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
+            val rawText = extractReplyText(response, joinAllParts = webSearchEnabled)
             if (!rawText.isNullOrBlank()) {
               lastHealthyChatModel = modelId
               return@runCatching parseReplySafely(rawText)
@@ -253,13 +280,15 @@ class GeminiBillChatService(
             val plainRequest =
               jsonRequest.copy(
                 // Keep the JSON mime type and thinking level, only soften
-                // the temperature for this last-resort attempt.
+                // the temperature for this last-resort attempt. Tools are
+                // dropped here: if a model rejected the search tool, the
+                // user still gets an answer (just without live web data).
                 generationConfig = jsonRequest.generationConfig?.copy(temperature = 0.35f),
+                tools = emptyList(),
               )
             val response =
               api.generateChatReply(model = fallbackModel, apiKey = apiKey, request = plainRequest)
-            val rawText =
-              response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
+            val rawText = extractReplyText(response, joinAllParts = false)
             if (!rawText.isNullOrBlank()) {
               lastHealthyChatModel = fallbackModel
               return@runCatching parseReplySafely(rawText)
@@ -328,6 +357,21 @@ class GeminiBillChatService(
     )
   }
 
+  /**
+   * The reply text of the first candidate. Normally the reply is one part; a search-grounded reply
+   * can arrive split into several text parts, which are joined in order.
+   */
+  private fun extractReplyText(response: GeminiChatResponse, joinAllParts: Boolean): String? {
+    val parts = response.candidates.firstOrNull()?.content?.parts.orEmpty()
+    val text =
+      if (joinAllParts) {
+        parts.mapNotNull { it.text }.joinToString("")
+      } else {
+        parts.firstOrNull()?.text
+      }
+    return text?.trim()
+  }
+
   private fun parseReplySafely(rawText: String): BillChatAiReplyDto {
     val unfenced =
       rawText
@@ -377,6 +421,65 @@ class GeminiBillChatService(
     return text.replace("**", "").replace("### ", "").replace("## ", "").trim()
   }
 
+  /**
+   * The user's current date, time, time zone and country, read from the phone. The model has no
+   * clock and no location of its own, so without this block it invents an answer to "what time is
+   * it?" or "which country am I in?". The country is derived from the phone's time zone (more
+   * reliable than the language setting), with the language region as a fallback.
+   */
+  private fun buildDeviceContext(): String {
+    val now = System.currentTimeMillis()
+    val zone = TimeZone.getDefault()
+    val arabic = Locale.forLanguageTag("ar")
+
+    val offsetMinutes = zone.getOffset(now) / 60_000
+    val absOffset = abs(offsetMinutes)
+    val utcOffset =
+      String.format(
+        Locale.US,
+        "UTC%s%02d:%02d",
+        if (offsetMinutes < 0) "-" else "+",
+        absOffset / 60,
+        absOffset % 60,
+      )
+
+    val dateText =
+      SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = zone }.format(Date(now))
+    val dayName = SimpleDateFormat("EEEE", arabic).apply { timeZone = zone }.format(Date(now))
+
+    val calendar = Calendar.getInstance(zone).apply { timeInMillis = now }
+    val hour24 = calendar.get(Calendar.HOUR_OF_DAY)
+    val minute = calendar.get(Calendar.MINUTE)
+    val hour12 = if (hour24 % 12 == 0) 12 else hour24 % 12
+    val period = if (hour24 < 12) "صباحاً" else "مساءً"
+    val clock24 = String.format(Locale.US, "%02d:%02d", hour24, minute)
+    val clock12 = String.format(Locale.US, "%d:%02d %s", hour12, minute, period)
+
+    val region =
+      runCatching { android.icu.util.TimeZone.getRegion(zone.id) }
+        .getOrNull()
+        ?.takeIf { it.length == 2 && it != "ZZ" }
+        ?: Locale.getDefault().country.takeIf { it.length == 2 }
+    val countryName =
+      region
+        ?.let { code ->
+          runCatching { Locale.Builder().setRegion(code).build().getDisplayCountry(arabic) }
+            .getOrNull()
+        }
+        ?.takeIf { it.isNotBlank() }
+
+    return buildString {
+      appendLine("=== الوقت والمكان الآن (مأخوذة من هاتف المستخدم، مرجع موثوق) ===")
+      appendLine("- التاريخ: $dateText ($dayName)")
+      appendLine("- الوقت المحلي الحالي: $clock24 (أي $clock12)")
+      appendLine("- المنطقة الزمنية: ${zone.id} ($utcOffset)")
+      if (countryName != null) {
+        appendLine("- بلد المستخدم حسب منطقة هاتفه الزمنية: $countryName")
+      }
+      appendLine()
+    }
+  }
+
   private fun buildSystemInstruction(
     categories: List<BillCategory>,
     allBills: List<BillRecord>,
@@ -385,19 +488,34 @@ class GeminiBillChatService(
     currentDefaultCurrency: String,
     pendingCurrencyProposal: CurrencyProposal?,
     contextMode: ChatContextMode,
+    webSearchEnabled: Boolean,
+    compactBills: Boolean,
   ): String = buildString {
-    appendLine("أنت «مساعد فواتيري الذكي» (مدعوم بـ Gemini)، مستشار مالي وتحليلي خبير داخل تطبيق أندرويد «فواتيري» لإدارة الفواتير المنزلية.")
+    appendLine("أنت «المساعد الذكي» (مدعوم بـ Gemini)، مستشار مالي وتحليلي خبير داخل تطبيق أندرويد «فواتيري» لإدارة الفواتير المنزلية.")
     appendLine("مهمتك الأساسية:")
     appendLine("1) الإجابة بالعربية الواضحة والمنظمة عن أي سؤال يخص فواتير ومصاريف المستخدم المسجلة (كهرباء، مياه، غاز، إنترنت، اتصالات، تسوق ومقاضي، مطاعم، صيانة، وقود، وغيرها).")
     appendLine("2) إعداد إحصائيات دقيقة ومقارنات شهرية وتحليل أسباب التفاوت في القيمة المالية أو كمية الاستهلاك بناءً على البيانات الفعلية أدناه فقط دون اختلاق أرقام غير موجودة.")
     appendLine("3) عندما يطلب المستخدم إحصائية أو مقارنة رقمية أو تحليلاً للبيانات، قم بتعبئة مصفوفة highlights (بأهم المؤشرات الرقمية) ومصفوفة chartBars مع chartTitle (برسم بياني مبسط للقيم المقارنة) إلى جانب الشرح النصي في replyText.")
     appendLine("4) مساعدة المستخدم في شرح مزايا التطبيق وكيفية استخدامها:")
     appendLine("   - تبويب «الفواتير»: إنشاء أقسام مخصصة باسم حر (مثل فاتورة الغاز أو فواتير التسوق) وتحديد وحدة القياس ونسبة تنبيه التفاوت (مثلاً 25%)، والدخول لأي قسم لإضافة فواتير شهرية بتاريخ مستقل أو تعديلها.")
-    appendLine("   - تبويب «مسح فاتورة»: تصوير الفاتورة عبر ماسح CameraX المدمج أو اختيار صورة من المعرض؛ يقوم Gemini باستخراج النص الكامل والتصنيف التلقائي لنوع المصروف (كهرباء، مياه، تسوق، مطاعم، صيانة، وقود، غاز، إنترنت، اتصالات) بناءً على اسم المتجر والمحتوى، وبناء جدول تفاصيل متكامل (Sheet) وحفظه تلقائياً في القسم المناسب.")
-    appendLine("   - ميزة الـ Sheet والتصدير: كل فاتورة تحتوي على جدول بنود تفصيلي (Sheet) يمكن استعراضه ومقارنته بنداً ببند مع الفاتورة السابقة وتصديره كملف CSV متوافق مع Excel وGoogle Sheets.")
+    appendLine("   - تبويب «مسح فاتورة»: تصوير الفاتورة عبر ماسح CameraX المدمج أو اختيار صورة من المعرض؛ يقوم Gemini باستخراج النص الكامل والتصنيف التلقائي لنوع المصروف (كهرباء، مياه، تسوق، مطاعم، صيانة، وقود، غاز، إنترنت، اتصالات) بناءً على اسم المتجر والمحتوى، وبناء جدول تفاصيل متكامل وحفظه تلقائياً في القسم المناسب.")
+    appendLine("   - ميزة الجدول والتصدير: كل فاتورة تحتوي على جدول بنود تفصيلي يمكن استعراضه ومقارنته بنداً ببند مع الفاتورة السابقة وتصديره كملف CSV متوافق مع Excel وGoogle Sheets.")
     appendLine("   - تبويب «الإحصائيات»: يعرض مخطط الأعمدة الشهري المكدس، ومخطط التوزيع الدائري للمرافق، ومنحنى تتبع التكلفة والاستهلاك لكل فئة.")
+    appendLine("   - عند الإشارة إلى جدول الفاتورة قل «الجدول» ولا تكتب كلمة Sheet بالإنجليزية.")
     appendLine("5) أعد الإجابة دائماً ككائن JSON صالح واحد فقط بالهيكل التالي دون نص خارجي:")
-    appendLine("""{"replyText":"الشرح بالعربية مع نقاط • واضحة وبدون **","highlights":[{"label":"عنوان المؤشر","value":"القيمة","trend":"+0%"}],"chartTitle":"عنوان الرسم البياني أو نص فارغ","chartBars":[{"label":"البند","value":120.5,"unit":"ر.س"}],"followUpSuggestions":["سؤال مقترح 1","سؤال مقترح 2"],"currencyAction":"","currencyLabel":"","currencySymbol":""}""")
+    appendLine("""{"replyText":"الشرح بالعربية مع نقاط • واضحة وبدون **","highlights":[{"label":"عنوان المؤشر","value":"القيمة","trend":"+0%"}],"chartTitle":"عنوان الرسم البياني أو نص فارغ","chartBars":[{"label":"البند","value":120.5,"unit":"$currentDefaultCurrency"}],"followUpSuggestions":["سؤال مقترح 1","سؤال مقترح 2"],"currencyAction":"","currencyLabel":"","currencySymbol":""}""")
+    appendLine()
+    // Current date, time, time zone and country: always sent, whatever the context mode.
+    appendLine(buildDeviceContext())
+    appendLine("=== الأسئلة العامة (غير المتعلقة بالفواتير) ===")
+    appendLine("- أجب عن الأسئلة العامة البسيطة (الوقت، التاريخ، اليوم، البلد، الحساب، المعلومات العامة) إجابة مباشرة وصحيحة وقصيرة، ثم اعرض المساعدة في الفواتير بجملة قصيرة فقط عند الحاجة دون تكرار تعريف نفسك أو دورك في كل رد.")
+    appendLine("- في أسئلة الوقت والتاريخ والبلد اعتمد حصراً على كتلة «الوقت والمكان الآن» أعلاه، ولا تخمّن ولا تستنتج الوقت أو البلد من العملة أو من لغة المحادثة. وإذا تعارض ما قيل سابقاً في المحادثة مع هذه الكتلة فالكتلة هي الصحيحة.")
+    appendLine("- إذا قال لك المستخدم إن معلومة خاطئة، أعد الحساب من الكتلة المذكورة وأجب بالقيمة الصحيحة مباشرة دون اعتذار مطوّل.")
+    if (webSearchEnabled) {
+      appendLine("- لديك أداة بحث Google مفعّلة من إعدادات المستخدم: استخدمها فقط للمعلومات الحية التي لا تعرفها (الطقس، الأخبار، الأسعار، أسعار الصرف، نتائج المباريات). لا تبحث عن الوقت أو التاريخ أو البلد لأن الكتلة أعلاه كافية، ولا تبحث في أسئلة الفواتير أو التطبيق. عند الاعتماد على البحث اذكر ذلك في جملة قصيرة، واحفظ الرد بصيغة JSON المطلوبة نفسها دون روابط طويلة.")
+    } else {
+      appendLine("- لا تملك وصولاً للإنترنت: لا تدّعِ معرفة الطقس أو الأسعار الحية أو الأخبار الحالية؛ قل ذلك بوضوح واقترح مصدراً مناسباً، وأخبره أنه يمكنه تفعيل «البحث في الإنترنت» من الإعدادات للمعلومات الحية.")
+    }
     appendLine()
     if (contextMode != ChatContextMode.MINIMAL) {
       appendLine("=== تغيير العملة الافتراضية من المحادثة ===")
@@ -477,12 +595,20 @@ class GeminiBillChatService(
       (contextMode == ChatContextMode.FULL || contextMode == ChatContextMode.TARGETED) &&
         detailBills.isNotEmpty()
     ) {
+      val shown = detailBills.sortedByDescending { it.billDateEpochMillis }.take(40)
       appendLine()
-      appendLine("=== سجل الفواتير التفصيلي (الأحدث أولاً، حتى 40 فاتورة) ===")
-      detailBills
-        .sortedByDescending { it.billDateEpochMillis }
-        .take(40)
-        .forEach { bill ->
+      if (compactBills) {
+        appendLine("=== سجل الفواتير (مختصر: التاريخ والقسم والمبلغ والاستهلاك فقط، الأحدث أولاً، حتى 40 فاتورة) ===")
+        appendLine("إن احتاج الجواب إلى بنود فاتورة أو قراءات عدادها أو جهتها فاطلب من المستخدم أن يسأل عن تلك الفاتورة تحديداً.")
+      } else {
+        appendLine("=== سجل الفواتير التفصيلي (الأحدث أولاً، حتى 40 فاتورة) ===")
+      }
+      shown.forEach { bill ->
+        if (compactBills) {
+          appendLine(
+            "• [${bill.billDateIso}] قسم «${bill.categoryName}» | المبلغ: ${DateAndFormatUtils.formatMoney(bill.totalAmount)} ${bill.currency} | الاستهلاك: ${DateAndFormatUtils.formatNumber(bill.consumptionValue)} ${bill.consumptionUnit}"
+          )
+        } else {
           val sheetPreview =
             if (bill.sheetItems.isNotEmpty()) {
               bill.sheetItems
@@ -492,13 +618,28 @@ class GeminiBillChatService(
               "لا توجد بنود إضافية"
             }
           appendLine(
-            "• [${bill.billDateIso}] قسم «${bill.categoryName}» | المبلغ: ${DateAndFormatUtils.formatMoney(bill.totalAmount)} ${bill.currency} | الاستهلاك: ${DateAndFormatUtils.formatNumber(bill.consumptionValue)} ${bill.consumptionUnit} | القراءات: (${DateAndFormatUtils.formatNumber(bill.previousReading)} -> ${DateAndFormatUtils.formatNumber(bill.currentReading)}) | الجهة: ${bill.providerName.ifBlank { "—" }} | بنود الـ Sheet: [$sheetPreview]"
+            "• [${bill.billDateIso}] قسم «${bill.categoryName}» | المبلغ: ${DateAndFormatUtils.formatMoney(bill.totalAmount)} ${bill.currency} | الاستهلاك: ${DateAndFormatUtils.formatNumber(bill.consumptionValue)} ${bill.consumptionUnit} | القراءات: (${DateAndFormatUtils.formatNumber(bill.previousReading)} -> ${DateAndFormatUtils.formatNumber(bill.currentReading)}) | الجهة: ${bill.providerName.ifBlank { "—" }} | بنود الجدول: [$sheetPreview]"
           )
         }
+      }
+      // Totals computed in the app, so the model does not add up a column of numbers itself.
+      if (shown.size > 1) {
+        shown.groupBy { it.currency }.forEach { (currency, group) ->
+          val total = group.sumOf { it.totalAmount }
+          appendLine(
+            "- مجموع الفواتير المعروضة أعلاه بعملة $currency: ${DateAndFormatUtils.formatMoney(total)} (عدد ${group.size}، المتوسط ${DateAndFormatUtils.formatMoney(total / group.size)}) — محسوب في التطبيق، اعتمد عليه بدل الجمع بنفسك."
+          )
+        }
+      }
     } else if (contextMode == ChatContextMode.FULL && allBills.isEmpty()) {
       appendLine()
       appendLine(
         "ملاحظة: المستخدم لم يسجل أي فواتير بعد؛ إذا سأل عن بياناته شجعه بلطف على إنشاء قسم أو مسح فاتورة بالكاميرا، مع الإجابة الكاملة عن أي استفسار حول التطبيق أو نصائح إدارة الفواتير."
+      )
+    } else if (contextMode == ChatContextMode.TARGETED && detailBills.isEmpty()) {
+      appendLine()
+      appendLine(
+        "ملاحظة: لا توجد فواتير مسجلة تطابق ما طلبه المستخدم (القسم أو الفترة)؛ قل ذلك بوضوح ولا تخمّن أرقاماً."
       )
     }
   }

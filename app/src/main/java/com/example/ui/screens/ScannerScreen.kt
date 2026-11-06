@@ -32,8 +32,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CalendarMonth
@@ -55,7 +57,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -101,6 +102,8 @@ import com.example.data.remote.ScannedBillDraft
 import com.example.domain.BillAnalyticsEngine
 import com.example.ui.components.CameraXBillCaptureDialog
 import com.example.ui.components.CategoryFormDialog
+import com.example.ui.components.ExpressiveButton
+import com.example.ui.components.ExpressiveFab
 import com.example.ui.components.UtilityIconAvatar
 import com.example.ui.theme.LocalUtilityPalette
 import com.example.ui.viewmodel.ScanUiState
@@ -276,13 +279,16 @@ fun ScannerScreen(
       contentAlignment = Alignment.TopCenter,
     ) {
       LazyColumn(
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 40.dp),
+        // Extra bottom space so the last card can scroll up above the floating button.
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.widthIn(max = 720.dp).fillMaxWidth(),
       ) {
         when (scanState) {
           is ScanUiState.Idle,
           is ScanUiState.Error -> {
+            // A little empty space above the card, so it sits lower on the screen.
+            item { Spacer(modifier = Modifier.height(44.dp)) }
             item {
               Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -293,7 +299,21 @@ fun ScannerScreen(
                   horizontalAlignment = Alignment.CenterHorizontally,
                   modifier = Modifier.padding(24.dp),
                 ) {
-                  UtilityIconAvatar(utilityType = UtilityType.OTHER, sizeDp = 64)
+                  // Receipt mark in the app's accent color (it follows the chosen accent).
+                  Box(
+                    modifier =
+                      Modifier.size(64.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                  ) {
+                    Icon(
+                      imageVector = Icons.AutoMirrored.Filled.ReceiptLong,
+                      contentDescription = null,
+                      tint = MaterialTheme.colorScheme.primary,
+                      modifier = Modifier.size(34.dp),
+                    )
+                  }
                   Spacer(modifier = Modifier.height(14.dp))
                   Text(
                     text = stringResource(R.string.scanner_title),
@@ -308,32 +328,7 @@ fun ScannerScreen(
                     textAlign = TextAlign.Center,
                   )
 
-                  if (isCameraGranted) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Surface(
-                      color = MaterialTheme.colorScheme.primaryContainer,
-                      shape = MaterialTheme.shapes.large,
-                      modifier = Modifier.testTag("camera_permission_ready_badge"),
-                    ) {
-                      Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                      ) {
-                        Icon(
-                          imageVector = Icons.Default.CheckCircle,
-                          contentDescription = null,
-                          tint = MaterialTheme.colorScheme.primary,
-                          modifier = Modifier.size(16.dp),
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                          text = stringResource(R.string.camera_permission_ready),
-                          style = MaterialTheme.typography.labelMedium,
-                          color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        )
-                      }
-                    }
-                  } else if (shouldShowCameraRationale) {
+                  if (!isCameraGranted && shouldShowCameraRationale) {
                     Spacer(modifier = Modifier.height(14.dp))
                     Surface(
                       color = MaterialTheme.colorScheme.secondaryContainer,
@@ -383,7 +378,7 @@ fun ScannerScreen(
                         }
                       }
                     }
-                  } else if (permissionDeniedNotice || permissionRequestedOnce) {
+                  } else if (!isCameraGranted && (permissionDeniedNotice || permissionRequestedOnce)) {
                     Spacer(modifier = Modifier.height(14.dp))
                     Surface(
                       color = MaterialTheme.colorScheme.secondaryContainer,
@@ -453,7 +448,7 @@ fun ScannerScreen(
 
                   Spacer(modifier = Modifier.height(22.dp))
 
-                  Button(
+                  ExpressiveButton(
                     onClick = { launchDocumentScanner() },
                     modifier =
                       Modifier.fillMaxWidth()
@@ -470,12 +465,13 @@ fun ScannerScreen(
 
                   Spacer(modifier = Modifier.height(10.dp))
 
-                  FilledTonalButton(
+                  ExpressiveButton(
                     onClick = {
                       photoPickerLauncher.launch(
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                       )
                     },
+                    tonal = true,
                     modifier =
                       Modifier.fillMaxWidth()
                         .height(52.dp)
@@ -548,28 +544,22 @@ fun ScannerScreen(
             }
           }
         }
+      }
 
-        // Separate "add bill" button below the scan card. On the start screen it has the same
-        // width and height as the camera / gallery buttons inside the card: the card pads its
-        // content by 24dp, so the button is inset by the same amount.
-        item {
-          val isStartScreen = scanState is ScanUiState.Idle || scanState is ScanUiState.Error
-          Button(
-            onClick = { showCreateDialog = true },
-            modifier =
-              Modifier.fillMaxWidth()
-                .padding(horizontal = if (isStartScreen) 24.dp else 0.dp)
-                .height(52.dp)
-                .testTag("add_bill_from_scanner_button"),
-          ) {
-            Icon(Icons.Default.Add, contentDescription = null)
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-              text = stringResource(R.string.add_category_button),
-              style = MaterialTheme.typography.titleMedium,
-            )
-          }
-        }
+      // "Add bill": a small rectangular button with a plus, floating at the bottom corner of the
+      // screen. BottomStart is the right corner in this right-to-left layout.
+      ExpressiveFab(
+        onClick = { showCreateDialog = true },
+        modifier =
+          Modifier.align(Alignment.BottomStart)
+            .padding(16.dp)
+            .size(width = 72.dp, height = 56.dp)
+            .testTag("add_bill_from_scanner_button"),
+      ) {
+        Icon(
+          imageVector = Icons.Default.Add,
+          contentDescription = stringResource(R.string.add_category_button),
+        )
       }
     }
   }

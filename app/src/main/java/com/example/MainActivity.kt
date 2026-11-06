@@ -579,6 +579,16 @@ fun AuthenticatedAppShell(currentUserId: String) {
                 onCreateCategory = { name, uType, unit, threshold, trackDuration ->
                   vm.createCategory(name, uType, unit, threshold, trackDuration)
                 },
+                onCreateCategoryWithTemplate = { name, uType, unit, threshold, trackDuration, mode ->
+                  vm.createCategoryWithTemplate(
+                    name,
+                    uType,
+                    unit,
+                    threshold,
+                    trackDuration,
+                    mode,
+                  )
+                },
                 onVoiceBillText = openVoiceBill,
               )
             }

@@ -5,7 +5,9 @@ import com.example.R
 import com.example.data.model.BillCategory
 import com.example.data.model.BillRecord
 import com.example.data.model.BillSheetRow
+import com.example.data.model.BillTemplates
 import com.example.data.model.HouseholdBudget
+import com.example.data.model.TemplateModes
 import com.example.data.model.UtilityType
 import com.example.data.remote.OperationType
 import com.example.data.remote.handleFirestoreError
@@ -157,6 +159,8 @@ class BillRepository(
     defaultUnit: String,
     alertThresholdPercent: Double = 25.0,
     trackDuration: Boolean = false,
+    templateMode: String = TemplateModes.PRESET,
+    rememberedRows: List<BillSheetRow> = emptyList(),
   ): Result<BillCategory> = runCatching {
     val uid = requireUserId()
     val docRef = db.collection(CATEGORIES_COLLECTION).document()
@@ -175,6 +179,11 @@ class BillRepository(
         createdAt = null,
         updatedAt = null,
         trackDuration = trackDuration,
+        // New sections always get an explicit mode; only old documents are LEGACY.
+        templateMode =
+          TemplateModes.normalize(templateMode).takeIf { it != TemplateModes.LEGACY }
+            ?: TemplateModes.PRESET,
+        rememberedRows = BillTemplates.sanitizeRemembered(rememberedRows),
       )
     try {
       docRef.set(category).await()
@@ -198,6 +207,8 @@ class BillRepository(
         name = category.name.trim().take(80).ifBlank { "فاتورة منزلية" },
         defaultUnit = category.defaultUnit.trim().take(20).ifBlank { "وحدة" },
         alertThresholdPercent = category.alertThresholdPercent.coerceIn(5.0, 200.0),
+        templateMode = TemplateModes.normalize(category.templateMode),
+        rememberedRows = BillTemplates.sanitizeRemembered(category.rememberedRows),
         updatedAt = null,
       )
     try {
@@ -209,6 +220,45 @@ class BillRepository(
       throw e
     }
   }
+
+  /**
+   * Stores row labels the user added to a bill with the section (the category document), so the
+   * next bill form of the same section can offer them again. Merges against the server copy in a
+   * transaction, so a stale local category can never drop rows remembered elsewhere.
+   */
+  suspend fun rememberSheetRows(categoryId: String, rows: List<BillSheetRow>): Result<Unit> =
+    runCatching {
+      val uid = requireUserId()
+      if (categoryId.isBlank() || rows.isEmpty()) return@runCatching
+      val docRef = db.collection(CATEGORIES_COLLECTION).document(categoryId)
+      try {
+        db
+          .runTransaction { tx ->
+            val snap = tx.get(docRef)
+            val current = snap.toObject(BillCategory::class.java)
+            if (current != null && current.userId == uid) {
+              val merged = BillTemplates.mergeRemembered(current, rows)
+              if (merged != null) {
+                tx.update(
+                  docRef,
+                  mapOf(
+                    "rememberedRows" to
+                      merged.map { mapOf("label" to it.label, "value" to "", "unit" to it.unit) },
+                    "updatedAt" to FieldValue.serverTimestamp(),
+                  ),
+                )
+              }
+            }
+            Unit
+          }
+          .await()
+      } catch (e: CancellationException) {
+        throw e
+      } catch (e: Exception) {
+        handleFirestoreError(e, OperationType.UPDATE, docRef.path)
+        throw e
+      }
+    }
 
   suspend fun deleteCategoryAndBills(categoryId: String): Result<Unit> = runCatching {
     val uid = requireUserId()

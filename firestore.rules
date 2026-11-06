@@ -46,6 +46,30 @@ service cloud.firestore {
              ));
     }
 
+    function isValidTemplateMode(m) {
+      return m is string && m in ['legacy', 'preset', 'custom'];
+    }
+
+    function isValidRememberedRow(row) {
+      return row is map &&
+             row.keys().hasAll(['label', 'value', 'unit']) &&
+             row.keys().hasOnly(['label', 'value', 'unit']) &&
+             row.label is string && row.label.size() >= 1 && row.label.size() <= 120 &&
+             row.value is string && row.value.size() <= 200 &&
+             row.unit is string && row.unit.size() <= 30;
+    }
+
+    // Rules cannot loop over a list, so the first and last entries are checked; the app
+    // sanitizes every entry before writing.
+    function isValidRememberedRows(rows) {
+      return rows is list &&
+             rows.size() <= 40 &&
+             (rows.size() == 0 || (
+               isValidRememberedRow(rows[0]) &&
+               isValidRememberedRow(rows[rows.size() - 1])
+             ));
+    }
+
     // --- Validation Blueprints ---
     function isValidCategory(data) {
       return isSignedIn() &&
@@ -60,6 +84,10 @@ service cloud.firestore {
              // Duration tracking flag, added with the bill-duration feature. Optional so
              // documents written by older app versions without this field still validate.
              (!('trackDuration' in data) || data.trackDuration is bool) &&
+             // Bill-form template mode and remembered rows. Optional so documents written by
+             // older app versions without these fields still validate.
+             (!('templateMode' in data) || isValidTemplateMode(data.templateMode)) &&
+             (!('rememberedRows' in data) || isValidRememberedRows(data.rememberedRows)) &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
@@ -132,7 +160,7 @@ service cloud.firestore {
                        incoming().keys().hasOnly([
                          'userId', 'name', 'utilityType', 'defaultUnit',
                          'alertThresholdPercent', 'createdAt', 'updatedAt',
-                         'trackDuration'
+                         'trackDuration', 'templateMode', 'rememberedRows'
                        ]) &&
                        isValidCategory(incoming());
 
@@ -144,7 +172,7 @@ service cloud.firestore {
                          // Action: Edit Category Metadata or Alert Threshold
                          incoming().diff(existing()).affectedKeys().hasOnly([
                            'name', 'utilityType', 'defaultUnit', 'alertThresholdPercent', 'updatedAt',
-                           'trackDuration'
+                           'trackDuration', 'templateMode', 'rememberedRows'
                          ])
                        );
 

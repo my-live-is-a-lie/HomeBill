@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -72,6 +73,8 @@ import com.example.R
 import com.example.data.model.BillCategory
 import com.example.data.model.BillRecord
 import com.example.data.model.BillSheetRow
+import com.example.data.model.BillTemplates
+import com.example.data.model.TemplateModes
 import com.example.data.model.UtilityType
 import com.example.domain.BillAnalyticsEngine
 import com.example.domain.BillComparisonResult
@@ -776,7 +779,20 @@ fun CategoryFormDialog(
     unit: String,
     threshold: Double,
     trackDuration: Boolean,
-  ) -> Unit,
+  ) -> Unit = { _, _, _, _, _ -> },
+  // When set, the dialog shows the template choice and reports it here instead of calling onSave.
+  // Callers that only pass onSave keep working: they get no template choice, and a new section
+  // gets the ready-made template of its utility type.
+  onSaveWithTemplate:
+    ((
+      name: String,
+      utilityType: UtilityType,
+      unit: String,
+      threshold: Double,
+      trackDuration: Boolean,
+      templateMode: String,
+    ) -> Unit)? =
+    null,
 ) {
   var selectedUtility by
     remember(existing) {
@@ -786,6 +802,15 @@ fun CategoryFormDialog(
   var unit by remember(existing) { mutableStateOf(existing?.defaultUnit ?: selectedUtility.defaultUnit) }
   var threshold by remember(existing) { mutableDoubleStateOf(existing?.alertThresholdPercent ?: 25.0) }
   var trackDuration by remember(existing) { mutableStateOf(existing?.trackDuration ?: false) }
+  // New sections default to the ready-made template; old sections keep their full legacy form
+  // until the user picks another mode.
+  var templateMode by
+    remember(existing) {
+      mutableStateOf(
+        if (existing == null) TemplateModes.PRESET else TemplateModes.normalize(existing.templateMode)
+      )
+    }
+  val showTemplateChoice = onSaveWithTemplate != null
 
   AlertDialog(
     onDismissRequest = onDismiss,
@@ -825,6 +850,48 @@ fun CategoryFormDialog(
               label = { Text(stringResource(uType.labelRes)) },
             )
           }
+        }
+
+        if (showTemplateChoice) {
+          Text(text = "نموذج الفاتورة", style = MaterialTheme.typography.labelLarge)
+          FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+          ) {
+            FilterChip(
+              selected = templateMode == TemplateModes.PRESET,
+              onClick = { templateMode = TemplateModes.PRESET },
+              label = { Text("قالب جاهز") },
+              modifier = Modifier.testTag("category_template_preset_chip"),
+            )
+            FilterChip(
+              selected = templateMode == TemplateModes.CUSTOM,
+              onClick = { templateMode = TemplateModes.CUSTOM },
+              label = { Text("بدون قالب (مخصص)") },
+              modifier = Modifier.testTag("category_template_custom_chip"),
+            )
+            // Only sections that already exist in the old format can stay on the old full form.
+            if (existing != null && TemplateModes.normalize(existing.templateMode) == TemplateModes.LEGACY) {
+              FilterChip(
+                selected = templateMode == TemplateModes.LEGACY,
+                onClick = { templateMode = TemplateModes.LEGACY },
+                label = { Text("النموذج الكامل القديم") },
+                modifier = Modifier.testTag("category_template_legacy_chip"),
+              )
+            }
+          }
+          Text(
+            text =
+              when (templateMode) {
+                TemplateModes.PRESET ->
+                  "يأتي النموذج بحقول وصفوف جاهزة تناسب نوع الفاتورة، ويتذكر الصفوف التي تضيفها."
+                TemplateModes.CUSTOM ->
+                  "يبدأ نموذج الفاتورة بالسعر والعملة فقط، ويتذكر الصفوف التي تضيفها لاقتراحها في فواتير هذا القسم."
+                else -> "النموذج الكامل بكل الحقول كما كان."
+              },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+          )
         }
 
         OutlinedTextField(
@@ -885,7 +952,13 @@ fun CategoryFormDialog(
     },
     confirmButton = {
       Button(
-        onClick = { onSave(name, selectedUtility, unit, threshold, trackDuration) },
+        onClick = {
+          if (onSaveWithTemplate != null) {
+            onSaveWithTemplate(name, selectedUtility, unit, threshold, trackDuration, templateMode)
+          } else {
+            onSave(name, selectedUtility, unit, threshold, trackDuration)
+          }
+        },
         modifier = Modifier.testTag("save_category_button"),
       ) {
         Text(stringResource(R.string.action_save))
@@ -897,7 +970,7 @@ fun CategoryFormDialog(
   )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun BillFormBottomSheet(
   category: BillCategory,
@@ -950,10 +1023,29 @@ fun BillFormBottomSheet(
   var providerName by remember(existingBill) { mutableStateOf(existingBill?.providerName ?: "") }
   var notes by remember(existingBill) { mutableStateOf(existingBill?.notes ?: "") }
 
+  // Which optional fixed fields this section's form shows. Hidden fields are not rendered at all;
+  // an old bill that holds data in a field always keeps that field visible.
+  val layout =
+    remember(category.templateMode, category.utilityType, existingBill) {
+      BillTemplates.layoutFor(category, existingBill)
+    }
+  val isLegacyForm = TemplateModes.normalize(category.templateMode) == TemplateModes.LEGACY
+  // Template rows plus rows remembered for this section (empty for legacy sections).
+  val suggestedRows =
+    remember(category.templateMode, category.utilityType, category.rememberedRows) {
+      BillTemplates.suggestedRows(category)
+    }
+
   val sheetRows =
     remember(existingBill) {
       mutableStateListOf<BillSheetRow>().apply {
-        if (existingBill != null) addAll(existingBill.sheetItems)
+        // An existing bill keeps exactly its own rows; a new bill starts with the suggestions
+        // (label filled, value empty).
+        if (existingBill != null) {
+          addAll(existingBill.sheetItems)
+        } else {
+          addAll(suggestedRows.take(BillTemplates.MAX_SHEET_ROWS))
+        }
       }
     }
 
@@ -1099,7 +1191,7 @@ fun BillFormBottomSheet(
         )
       }
 
-      Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+      if (layout.showReadings) Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
           value = prevReadingText,
           onValueChange = {
@@ -1128,7 +1220,7 @@ fun BillFormBottomSheet(
         )
       }
 
-      Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+      if (layout.showConsumption) Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
         OutlinedTextField(
           value = consumptionText,
           onValueChange = { consumptionText = it },
@@ -1146,29 +1238,37 @@ fun BillFormBottomSheet(
         )
       }
 
-      Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-        OutlinedTextField(
-          value = invoiceNumber,
-          onValueChange = { invoiceNumber = it },
-          label = { Text(stringResource(R.string.field_invoice_number)) },
-          singleLine = true,
-          modifier = Modifier.weight(1f),
-        )
-        OutlinedTextField(
-          value = providerName,
-          onValueChange = { providerName = it },
-          label = { Text(stringResource(R.string.field_provider_name)) },
-          singleLine = true,
-          modifier = Modifier.weight(1f),
-        )
+      if (layout.showInvoiceNumber || layout.showProvider) {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+          if (layout.showInvoiceNumber) {
+            OutlinedTextField(
+              value = invoiceNumber,
+              onValueChange = { invoiceNumber = it },
+              label = { Text(stringResource(R.string.field_invoice_number)) },
+              singleLine = true,
+              modifier = Modifier.weight(1f),
+            )
+          }
+          if (layout.showProvider) {
+            OutlinedTextField(
+              value = providerName,
+              onValueChange = { providerName = it },
+              label = { Text(stringResource(R.string.field_provider_name)) },
+              singleLine = true,
+              modifier = Modifier.weight(1f),
+            )
+          }
+        }
       }
 
-      OutlinedTextField(
-        value = notes,
-        onValueChange = { notes = it },
-        label = { Text(stringResource(R.string.field_notes)) },
-        modifier = Modifier.fillMaxWidth(),
-      )
+      if (layout.showNotes) {
+        OutlinedTextField(
+          value = notes,
+          onValueChange = { notes = it },
+          label = { Text(stringResource(R.string.field_notes)) },
+          modifier = Modifier.fillMaxWidth(),
+        )
+      }
 
       // Sheet Rows Editor
       Row(
@@ -1220,12 +1320,62 @@ fun BillFormBottomSheet(
         }
       }
 
+      // Template and remembered rows that are not in the table right now: one tap adds them back.
+      val missingSuggestions =
+        suggestedRows.filter { suggestion ->
+          sheetRows.none {
+            BillTemplates.normalizeLabel(it.label) == BillTemplates.normalizeLabel(suggestion.label)
+          }
+        }
+      if (missingSuggestions.isNotEmpty() && sheetRows.size < BillTemplates.MAX_SHEET_ROWS) {
+        Text(
+          text = "صفوف مقترحة",
+          style = MaterialTheme.typography.labelMedium,
+          color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        FlowRow(
+          horizontalArrangement = Arrangement.spacedBy(8.dp),
+          verticalArrangement = Arrangement.spacedBy(4.dp),
+          modifier = Modifier.fillMaxWidth(),
+        ) {
+          missingSuggestions.forEach { suggestion ->
+            AssistChip(
+              onClick = {
+                if (sheetRows.size < BillTemplates.MAX_SHEET_ROWS) {
+                  sheetRows.add(BillSheetRow(suggestion.label, "", suggestion.unit))
+                }
+              },
+              label = { Text(suggestion.label) },
+              leadingIcon = {
+                Icon(
+                  imageVector = Icons.Default.Add,
+                  contentDescription = null,
+                  modifier = Modifier.size(16.dp),
+                )
+              },
+            )
+          }
+        }
+      }
+
       Spacer(modifier = Modifier.height(8.dp))
 
       Button(
         onClick = {
+          // Legacy sections keep the old rule (every labelled row is saved). Template and custom
+          // sections drop untouched suggestion rows (label but no value), except rows the bill
+          // already had, so editing never loses saved rows.
+          val previouslySavedLabels =
+            existingBill?.sheetItems.orEmpty().map { BillTemplates.normalizeLabel(it.label) }.toSet()
           val finalSheet =
-            sheetRows.filter { it.label.isNotBlank() }.ifEmpty {
+            sheetRows
+              .filter { row ->
+                row.label.isNotBlank() &&
+                  (isLegacyForm ||
+                    row.value.isNotBlank() ||
+                    BillTemplates.normalizeLabel(row.label) in previouslySavedLabels)
+              }
+              .ifEmpty {
               buildList {
                 if (providerName.isNotBlank()) add(BillSheetRow("الجهة المصدرة", providerName, ""))
                 if (invoiceNumber.isNotBlank()) add(BillSheetRow("رقم الفاتورة", invoiceNumber, ""))
@@ -1267,6 +1417,10 @@ fun BillFormBottomSheet(
               sheetItems = finalSheet,
               createdAt = existingBill?.createdAt,
               updatedAt = existingBill?.updatedAt,
+              // The form has no controls for these two; carry them over so editing a bill never
+              // wipes its consumption start/end timestamps.
+              startedAtEpochMillis = existingBill?.startedAtEpochMillis,
+              endedAtEpochMillis = existingBill?.endedAtEpochMillis,
             )
           )
         },

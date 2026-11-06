@@ -147,6 +147,10 @@ fun ScannerScreen(
   onSaveScannedBill: (ScannedBillDraft, String?) -> Unit,
   onResetScan: () -> Unit,
   onCreateCategory: (String, UtilityType, String, Double, Boolean) -> Unit,
+  // When set, the create-section dialog offers the template choice and reports it here.
+  onCreateCategoryWithTemplate:
+    ((String, UtilityType, String, Double, Boolean, String) -> Unit)? =
+    null,
   // Called with the sentence the user dictated in the "add by voice" sheet.
   onVoiceBillText: (String) -> Unit = {},
 ) {
@@ -256,6 +260,12 @@ fun ScannerScreen(
       onSave = { name, uType, unit, threshold, trackDuration ->
         showCreateDialog = false
         onCreateCategory(name, uType, unit, threshold, trackDuration)
+      },
+      onSaveWithTemplate = onCreateCategoryWithTemplate?.let { createWithTemplate ->
+        { name: String, uType: UtilityType, unit: String, threshold: Double, trackDuration: Boolean, templateMode: String ->
+          showCreateDialog = false
+          createWithTemplate(name, uType, unit, threshold, trackDuration, templateMode)
+        }
       },
     )
   }

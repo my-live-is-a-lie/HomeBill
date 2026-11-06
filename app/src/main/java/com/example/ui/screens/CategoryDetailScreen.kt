@@ -222,7 +222,7 @@ fun CategoryDetailScreen(
     CategoryFormDialog(
       existing = category,
       onDismiss = { showEditCategoryDialog = false },
-      onSave = { name, uType, unit, threshold, trackDuration ->
+      onSaveWithTemplate = { name, uType, unit, threshold, trackDuration, templateMode ->
         showEditCategoryDialog = false
         onUpdateCategory(
           category.copy(
@@ -231,6 +231,7 @@ fun CategoryDetailScreen(
             defaultUnit = unit,
             alertThresholdPercent = threshold,
             trackDuration = trackDuration,
+            templateMode = templateMode,
           )
         )
       },

@@ -576,13 +576,14 @@ fun ScannerScreen(
           contentDescription = stringResource(R.string.add_category_button),
         )
       }
-      // "Add bill by voice": centered at the bottom so it doesn't overlap the "+" button.
+      // "Add bill by voice": at the bottom end (the left corner in this right-to-left
+      // layout), opposite the "+" button at BottomStart, so the two stay far apart.
       ExtendedFloatingActionButton(
         onClick = { showVoiceSheet = true },
         icon = { Icon(imageVector = Icons.Default.Mic, contentDescription = null) },
         text = { Text("إضافة بالصوت") },
         modifier =
-          Modifier.align(Alignment.BottomCenter)
+          Modifier.align(Alignment.BottomEnd)
             .padding(16.dp)
             .testTag("scanner_voice_bill_button"),
       )

@@ -487,7 +487,6 @@ fun AuthenticatedAppShell(currentUserId: String) {
                 onSaveHouseholdBudget = { limit, curr, warn ->
                   vm.saveHouseholdBudget(limit, curr, warn)
                 },
-                onVoiceBillText = openVoiceBill,
               )
             }
 
@@ -580,6 +579,7 @@ fun AuthenticatedAppShell(currentUserId: String) {
                 onCreateCategory = { name, uType, unit, threshold, trackDuration ->
                   vm.createCategory(name, uType, unit, threshold, trackDuration)
                 },
+                onVoiceBillText = openVoiceBill,
               )
             }
 

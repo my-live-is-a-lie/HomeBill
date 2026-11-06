@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
@@ -58,10 +57,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FabPosition
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -106,6 +102,8 @@ import com.example.data.remote.ScannedBillDraft
 import com.example.domain.BillAnalyticsEngine
 import com.example.ui.components.CameraXBillCaptureDialog
 import com.example.ui.components.CategoryFormDialog
+import com.example.ui.components.ExpressiveButton
+import com.example.ui.components.ExpressiveFab
 import com.example.ui.components.UtilityIconAvatar
 import com.example.ui.theme.LocalUtilityPalette
 import com.example.ui.viewmodel.ScanUiState
@@ -274,24 +272,6 @@ fun ScannerScreen(
         title = { Text(stringResource(R.string.scanner_title)) },
       )
     },
-    // "Add bill" is a small rectangular button with a plus, floating at the bottom corner of the
-    // screen. FabPosition.End is the left corner in this right-to-left layout.
-    floatingActionButton = {
-      FloatingActionButton(
-        onClick = { showCreateDialog = true },
-        shape = RoundedCornerShape(16.dp),
-        containerColor = MaterialTheme.colorScheme.primary,
-        contentColor = MaterialTheme.colorScheme.onPrimary,
-        modifier =
-          Modifier.size(width = 72.dp, height = 56.dp).testTag("add_bill_from_scanner_button"),
-      ) {
-        Icon(
-          imageVector = Icons.Default.Add,
-          contentDescription = stringResource(R.string.add_category_button),
-        )
-      }
-    },
-    floatingActionButtonPosition = FabPosition.End,
     containerColor = MaterialTheme.colorScheme.background,
   ) { innerPadding ->
     Box(
@@ -307,6 +287,8 @@ fun ScannerScreen(
         when (scanState) {
           is ScanUiState.Idle,
           is ScanUiState.Error -> {
+            // A little empty space above the card, so it sits lower on the screen.
+            item { Spacer(modifier = Modifier.height(44.dp)) }
             item {
               Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -466,7 +448,7 @@ fun ScannerScreen(
 
                   Spacer(modifier = Modifier.height(22.dp))
 
-                  Button(
+                  ExpressiveButton(
                     onClick = { launchDocumentScanner() },
                     modifier =
                       Modifier.fillMaxWidth()
@@ -483,12 +465,13 @@ fun ScannerScreen(
 
                   Spacer(modifier = Modifier.height(10.dp))
 
-                  FilledTonalButton(
+                  ExpressiveButton(
                     onClick = {
                       photoPickerLauncher.launch(
                         PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                       )
                     },
+                    tonal = true,
                     modifier =
                       Modifier.fillMaxWidth()
                         .height(52.dp)
@@ -561,6 +544,22 @@ fun ScannerScreen(
             }
           }
         }
+      }
+
+      // "Add bill": a small rectangular button with a plus, floating at the bottom corner of the
+      // screen. BottomStart is the right corner in this right-to-left layout.
+      ExpressiveFab(
+        onClick = { showCreateDialog = true },
+        modifier =
+          Modifier.align(Alignment.BottomStart)
+            .padding(16.dp)
+            .size(width = 72.dp, height = 56.dp)
+            .testTag("add_bill_from_scanner_button"),
+      ) {
+        Icon(
+          imageVector = Icons.Default.Add,
+          contentDescription = stringResource(R.string.add_category_button),
+        )
       }
     }
   }

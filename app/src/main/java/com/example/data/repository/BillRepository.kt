@@ -209,6 +209,7 @@ class BillRepository(
         alertThresholdPercent = category.alertThresholdPercent.coerceIn(5.0, 200.0),
         templateMode = TemplateModes.normalize(category.templateMode),
         rememberedRows = BillTemplates.sanitizeRemembered(category.rememberedRows),
+        dismissedRows = BillTemplates.sanitizeDismissed(category.dismissedRows),
         updatedAt = null,
       )
     try {
@@ -222,43 +223,58 @@ class BillRepository(
   }
 
   /**
-   * Stores row labels the user added to a bill with the section (the category document), so the
-   * next bill form of the same section can offer them again. Merges against the server copy in a
-   * transaction, so a stale local category can never drop rows remembered elsewhere.
+   * Stores row memory of a saved bill with the section (the category document): labels the user
+   * added are remembered, and suggested rows the user dropped are dismissed (see
+   * BillTemplates.mergeDismissed). Merges against the server copy in a transaction, so a stale
+   * local category can never drop rows remembered or dismissed elsewhere.
+   *
+   * [seededRows] are the rows that were pre-filled into this bill's form (empty when editing), and
+   * [previousLabelKeys] are the normalized labels the bill already had before this save.
    */
-  suspend fun rememberSheetRows(categoryId: String, rows: List<BillSheetRow>): Result<Unit> =
-    runCatching {
-      val uid = requireUserId()
-      if (categoryId.isBlank() || rows.isEmpty()) return@runCatching
-      val docRef = db.collection(CATEGORIES_COLLECTION).document(categoryId)
-      try {
-        db
-          .runTransaction { tx ->
-            val snap = tx.get(docRef)
-            val current = snap.toObject(BillCategory::class.java)
-            if (current != null && current.userId == uid) {
-              val merged = BillTemplates.mergeRemembered(current, rows)
-              if (merged != null) {
-                tx.update(
-                  docRef,
-                  mapOf(
-                    "rememberedRows" to
-                      merged.map { mapOf("label" to it.label, "value" to "", "unit" to it.unit) },
-                    "updatedAt" to FieldValue.serverTimestamp(),
-                  ),
-                )
-              }
+  suspend fun rememberSheetRows(
+    categoryId: String,
+    rows: List<BillSheetRow>,
+    seededRows: List<BillSheetRow> = emptyList(),
+    previousLabelKeys: Set<String> = emptySet(),
+  ): Result<Unit> = runCatching {
+    val uid = requireUserId()
+    if (categoryId.isBlank()) return@runCatching
+    val docRef = db.collection(CATEGORIES_COLLECTION).document(categoryId)
+    try {
+      db
+        .runTransaction { tx ->
+          val snap = tx.get(docRef)
+          val current = snap.toObject(BillCategory::class.java)
+          if (current != null && current.userId == uid) {
+            val updates = mutableMapOf<String, Any>()
+            val merged = BillTemplates.mergeRemembered(current, rows)
+            if (merged != null) {
+              updates["rememberedRows"] =
+                merged.map { mapOf("label" to it.label, "value" to "", "unit" to it.unit) }
             }
-            Unit
+            val dismissed =
+              BillTemplates.mergeDismissed(
+                current = current.dismissedRows,
+                seeded = seededRows,
+                saved = rows,
+                previousLabelKeys = previousLabelKeys,
+              )
+            if (dismissed != null) updates["dismissedRows"] = dismissed
+            if (updates.isNotEmpty()) {
+              updates["updatedAt"] = FieldValue.serverTimestamp()
+              tx.update(docRef, updates)
+            }
           }
-          .await()
-      } catch (e: CancellationException) {
-        throw e
-      } catch (e: Exception) {
-        handleFirestoreError(e, OperationType.UPDATE, docRef.path)
-        throw e
-      }
+          Unit
+        }
+        .await()
+    } catch (e: CancellationException) {
+      throw e
+    } catch (e: Exception) {
+      handleFirestoreError(e, OperationType.UPDATE, docRef.path)
+      throw e
     }
+  }
 
   suspend fun deleteCategoryAndBills(categoryId: String): Result<Unit> = runCatching {
     val uid = requireUserId()

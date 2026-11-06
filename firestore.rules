@@ -70,6 +70,21 @@ service cloud.firestore {
              ));
     }
 
+    function isValidDismissedLabel(label) {
+      return label is string && label.size() >= 1 && label.size() <= 120;
+    }
+
+    // Normalized labels of dismissed suggestion rows. Rules cannot loop over a list, so the first
+    // and last entries are checked; the app sanitizes every entry before writing.
+    function isValidDismissedRows(rows) {
+      return rows is list &&
+             rows.size() <= 40 &&
+             (rows.size() == 0 || (
+               isValidDismissedLabel(rows[0]) &&
+               isValidDismissedLabel(rows[rows.size() - 1])
+             ));
+    }
+
     // --- Validation Blueprints ---
     function isValidCategory(data) {
       return isSignedIn() &&
@@ -88,6 +103,7 @@ service cloud.firestore {
              // older app versions without these fields still validate.
              (!('templateMode' in data) || isValidTemplateMode(data.templateMode)) &&
              (!('rememberedRows' in data) || isValidRememberedRows(data.rememberedRows)) &&
+             (!('dismissedRows' in data) || isValidDismissedRows(data.dismissedRows)) &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
@@ -160,7 +176,7 @@ service cloud.firestore {
                        incoming().keys().hasOnly([
                          'userId', 'name', 'utilityType', 'defaultUnit',
                          'alertThresholdPercent', 'createdAt', 'updatedAt',
-                         'trackDuration', 'templateMode', 'rememberedRows'
+                         'trackDuration', 'templateMode', 'rememberedRows', 'dismissedRows'
                        ]) &&
                        isValidCategory(incoming());
 
@@ -172,7 +188,7 @@ service cloud.firestore {
                          // Action: Edit Category Metadata or Alert Threshold
                          incoming().diff(existing()).affectedKeys().hasOnly([
                            'name', 'utilityType', 'defaultUnit', 'alertThresholdPercent', 'updatedAt',
-                           'trackDuration', 'templateMode', 'rememberedRows'
+                           'trackDuration', 'templateMode', 'rememberedRows', 'dismissedRows'
                          ])
                        );
 

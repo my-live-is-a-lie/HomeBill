@@ -438,11 +438,32 @@ class HomeBillsViewModel(
 
       result
         .onSuccess { savedId ->
-          // Remember rows added to this bill with the section. A failure here must never affect
-          // the bill that was just saved, so it is only logged.
-          repository.rememberSheetRows(bill.categoryId, bill.sheetItems).onFailure {
-            Log.w(TAG, "Could not remember bill rows for category ${bill.categoryId}", it)
-          }
+          // Remember rows added to this bill with the section, and dismiss suggested rows the
+          // user dropped. Only a new bill had suggestions seeded into its form, so only a new
+          // bill can dismiss anything. A failure here must never affect the bill that was just
+          // saved, so it is only logged.
+          val savedCategory =
+            (categoriesState.value as? UiState.Success)?.data.orEmpty().firstOrNull {
+              it.id == bill.categoryId
+            }
+          val seededRows =
+            if (bill.id.isBlank() && savedCategory != null) {
+              BillTemplates.suggestedRows(savedCategory)
+            } else {
+              emptyList()
+            }
+          val previousLabelKeys =
+            existingCategoryBills
+              .firstOrNull { it.id == bill.id }
+              ?.sheetItems
+              .orEmpty()
+              .map { BillTemplates.normalizeLabel(it.label) }
+              .toSet()
+          repository
+            .rememberSheetRows(bill.categoryId, bill.sheetItems, seededRows, previousLabelKeys)
+            .onFailure {
+              Log.w(TAG, "Could not remember bill rows for category ${bill.categoryId}", it)
+            }
           if (draftComparison.hasSpike) {
             val pct =
               draftComparison.amountChangePercent ?: draftComparison.consumptionChangePercent ?: 0.0

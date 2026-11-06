@@ -1030,10 +1030,26 @@ fun BillFormBottomSheet(
       BillTemplates.layoutFor(category, existingBill)
     }
   val isLegacyForm = TemplateModes.normalize(category.templateMode) == TemplateModes.LEGACY
-  // Template rows plus rows remembered for this section (empty for legacy sections).
+  // Template rows plus rows remembered for this section, minus dismissed ones: seeded into a new
+  // bill (empty for legacy sections).
   val suggestedRows =
-    remember(category.templateMode, category.utilityType, category.rememberedRows) {
+    remember(
+      category.templateMode,
+      category.utilityType,
+      category.rememberedRows,
+      category.dismissedRows,
+    ) {
       BillTemplates.suggestedRows(category)
+    }
+  // Same rows including dismissed ones, so a dismissed row can always be re-added with one tap.
+  val chipRows =
+    remember(
+      category.templateMode,
+      category.utilityType,
+      category.rememberedRows,
+      category.dismissedRows,
+    ) {
+      BillTemplates.allSuggestedRows(category)
     }
 
   val sheetRows =
@@ -1322,7 +1338,7 @@ fun BillFormBottomSheet(
 
       // Template and remembered rows that are not in the table right now: one tap adds them back.
       val missingSuggestions =
-        suggestedRows.filter { suggestion ->
+        chipRows.filter { suggestion ->
           sheetRows.none {
             BillTemplates.normalizeLabel(it.label) == BillTemplates.normalizeLabel(suggestion.label)
           }

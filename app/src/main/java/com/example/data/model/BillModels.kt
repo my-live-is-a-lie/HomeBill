@@ -143,6 +143,7 @@ data class BillTemplate(val layout: BillFormLayout, val rows: List<BillSheetRow>
 
 object BillTemplates {
   const val MAX_REMEMBERED_ROWS = 40
+  const val MAX_DISMISSED_ROWS = 40
   const val MAX_SHEET_ROWS = 25
 
   val PRICE_ONLY = BillFormLayout(
@@ -323,10 +324,20 @@ object BillTemplates {
   }
 
   /**
-   * Rows offered for a new bill of this section: the template rows (preset mode only) followed by
-   * the rows remembered for this section. Values are always empty. Legacy sections get none.
+   * Rows seeded into the table of a new bill of this section: the template rows (preset mode only)
+   * followed by the remembered rows, minus the rows the user dismissed. Values are always empty.
+   * Legacy sections get none.
    */
   fun suggestedRows(category: BillCategory): List<BillSheetRow> {
+    val dismissed = category.dismissedRows.map { normalizeLabel(it) }.toSet()
+    return allSuggestedRows(category).filter { normalizeLabel(it.label) !in dismissed }
+  }
+
+  /**
+   * Every row that can be suggested for this section, dismissed ones included. The form offers
+   * these as tap-to-add chips so a dismissed row can always be restored.
+   */
+  fun allSuggestedRows(category: BillCategory): List<BillSheetRow> {
     val mode = TemplateModes.normalize(category.templateMode)
     if (mode == TemplateModes.LEGACY) return emptyList()
     val templateRows =
@@ -358,6 +369,43 @@ object BillTemplates {
     if (additions.isEmpty()) return null
     return (category.rememberedRows + additions).takeLast(MAX_REMEMBERED_ROWS)
   }
+
+  /**
+   * Returns the new dismissed-rows list after a bill was saved, or null when nothing changes.
+   *
+   * [seeded] are the rows that were pre-filled into the form of a new bill. Any of them missing
+   * from [saved] (deleted, or left without a value) becomes dismissed. A saved row that has a
+   * value and was not already on the bill before ([previousLabelKeys]) is un-dismissed. Rows the
+   * user typed fresh are never in [seeded], so deleting them dismisses nothing.
+   */
+  fun mergeDismissed(
+    current: List<String>,
+    seeded: List<BillSheetRow>,
+    saved: List<BillSheetRow>,
+    previousLabelKeys: Set<String>,
+  ): List<String>? {
+    val result = LinkedHashSet<String>(current)
+    val savedKeys = saved.map { normalizeLabel(it.label) }.filter { it.isNotEmpty() }.toSet()
+    saved
+      .filter { it.value.isNotBlank() }
+      .map { normalizeLabel(it.label) }
+      .filter { it.isNotEmpty() && it !in previousLabelKeys }
+      .forEach { result.remove(it) }
+    seeded
+      .map { normalizeLabel(it.label) }
+      .filter { it.isNotEmpty() && it !in savedKeys }
+      .forEach { result.add(it) }
+    val updated = result.toList().takeLast(MAX_DISMISSED_ROWS)
+    return if (updated == current) null else updated
+  }
+
+  /** Clean-up applied before dismissed labels are written: normalized, unique, capped. */
+  fun sanitizeDismissed(labels: List<String>): List<String> =
+    labels
+      .map { normalizeLabel(it).take(120) }
+      .filter { it.isNotEmpty() }
+      .distinct()
+      .takeLast(MAX_DISMISSED_ROWS)
 
   /** Clean-up applied before remembered rows are written: trimmed, unique, capped, value-less. */
   fun sanitizeRemembered(rows: List<BillSheetRow>): List<BillSheetRow> {
@@ -404,6 +452,9 @@ data class BillCategory(
   // Rows the user added to bills of this section. Offered again, with empty values, in the next
   // bill form of the same section. Only label and unit are meaningful here.
   val rememberedRows: List<BillSheetRow> = emptyList(),
+  // Normalized labels of suggested rows the user dismissed. These are not seeded into new bills
+  // of this section any more, but stay available as tap-to-add suggestions.
+  val dismissedRows: List<String> = emptyList(),
 )
 
 @IgnoreExtraProperties

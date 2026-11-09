@@ -20,7 +20,7 @@
 - Navigation Compose بمسارات `@Serializable` في `MainActivity.kt`:
   `DashboardRoute`, `ScannerRoute(preselectedCategoryId)`, `AnalyticsRoute`, `AssistantRoute(initialPrompt)`,
   `CategoryDetailRoute(categoryId)`, `SettingsRoute`.
-- Firebase Auth + Firestore (معرّف قاعدة البيانات من `R.string.firestore_database_id`).
+- تخزين محلي فقط على الجهاز عبر Room (`data/local`: `BillDatabase` و`BillDao`) — لا Firebase ولا تسجيل دخول؛ مالك واحد ثابت `LOCAL_USER_ID`.
 - Retrofit + OkHttp (بما فيه WebSocket) + kotlinx.serialization (+ `org.json` في مكان واحد).
 - Coil للصور، CameraX وML Kit Document Scanner للمسح، accompanist-permissions.
 - Gemini عبر **مفتاح المستخدم نفسه** المحفوظ في `UserGeminiKeyStore` (يُدخل من تبويب الإعدادات).
@@ -28,12 +28,12 @@
 - بناء release مفعّل فيه R8 (`isMinifyEnabled = true`).
 
 ## هيكل الكود (`app/src/main/java/com/example/`)
-- `MainActivity.kt` — المصادقة، التنقّل، ربط الـ ViewModels بالشاشات (ومنها `openVoiceBill`).
+- `MainActivity.kt` — التنقّل، ربط الـ ViewModels بالشاشات (ومنها `openVoiceBill`).
 - `data/model` — `BillRecord`, `BillCategory`, `UtilityType`, `UiState`, …
 - `data/remote` — `GeminiApiClient` (استخراج الصورة + التصنيف، قائمة `SUPPORTED_VISION_MODELS`)،
   `GeminiBillScanner` (تحويل النتيجة إلى `ScannedBillDraft`)، `GeminiBillTextScanner` (نص منطوق → مسودة فاتورة)،
   `UserGeminiKeyStore`.
-- `data/repository/BillRepository` — Firestore.
+- `data/repository/BillRepository` — Room (قاعدة بيانات محلية).
 - `domain` — محركات التحليل والبحث والميزانية.
 - `ui/viewmodel` — `HomeBillsViewModel` (الفواتير، حالة المسح `ScanUiState`) و`BillChatViewModel` (محادثات المساعد).
 - `ui/screens` — `DashboardScreen`, `ScannerScreen` (ونموذج المراجعة `ExtractedSheetReviewCard`),

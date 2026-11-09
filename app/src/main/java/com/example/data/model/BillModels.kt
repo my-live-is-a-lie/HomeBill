@@ -2,11 +2,10 @@ package com.example.data.model
 
 import androidx.annotation.Keep
 import androidx.annotation.StringRes
+import androidx.room.Entity
+import androidx.room.Index
+import androidx.room.PrimaryKey
 import com.example.R
-import com.google.firebase.Timestamp
-import com.google.firebase.firestore.DocumentId
-import com.google.firebase.firestore.IgnoreExtraProperties
-import com.google.firebase.firestore.ServerTimestamp
 
 @Keep
 enum class UtilityType(
@@ -105,7 +104,6 @@ enum class UtilityType(
   }
 }
 
-@IgnoreExtraProperties
 @Keep
 data class BillSheetRow(
   val label: String = "",
@@ -434,17 +432,18 @@ object BillTemplates {
   }
 }
 
-@IgnoreExtraProperties
+@Entity(tableName = "categories", indices = [Index("userId")])
 @Keep
 data class BillCategory(
-  @DocumentId val id: String = "",
+  @PrimaryKey val id: String = "",
   val userId: String = "",
   val name: String = "",
   val utilityType: String = "gas",
   val defaultUnit: String = "م³",
   val alertThresholdPercent: Double = 25.0,
-  @ServerTimestamp val createdAt: Timestamp? = null,
-  @ServerTimestamp val updatedAt: Timestamp? = null,
+  // Epoch millis, set by the repository when the row is created or updated.
+  val createdAt: Long? = null,
+  val updatedAt: Long? = null,
   // When true, bills of this category show consumption start/end tracking in the bill sheet.
   val trackDuration: Boolean = false,
   // One of TemplateModes. A missing value (documents from older app versions) means LEGACY.
@@ -457,10 +456,10 @@ data class BillCategory(
   val dismissedRows: List<String> = emptyList(),
 )
 
-@IgnoreExtraProperties
+@Entity(tableName = "bills", indices = [Index("userId"), Index("categoryId")])
 @Keep
 data class BillRecord(
-  @DocumentId val id: String = "",
+  @PrimaryKey val id: String = "",
   val userId: String = "",
   val categoryId: String = "",
   val categoryName: String = "",
@@ -480,24 +479,27 @@ data class BillRecord(
   val notes: String = "",
   val sourceType: String = "manual",
   val sheetItems: List<BillSheetRow> = emptyList(),
-  @ServerTimestamp val createdAt: Timestamp? = null,
-  @ServerTimestamp val updatedAt: Timestamp? = null,
+  // Epoch millis, set by the repository when the row is created or updated.
+  val createdAt: Long? = null,
+  val updatedAt: Long? = null,
   // Consumption tracking timestamps (epoch millis). Null means the step has not happened yet:
   // startedAt null = consumption never started, endedAt null = consumption still running.
   val startedAtEpochMillis: Long? = null,
   val endedAtEpochMillis: Long? = null,
 )
 
-@IgnoreExtraProperties
+// One row per owner id; the row id is the owner id.
+@Entity(tableName = "budgets")
 @Keep
 data class HouseholdBudget(
-  @DocumentId val id: String = "",
+  @PrimaryKey val id: String = "",
   val userId: String = "",
   val monthlyLimit: Double = 0.0,
   val currency: String = "ر.س",
   val warningPercent: Double = 80.0,
-  @ServerTimestamp val createdAt: Timestamp? = null,
-  @ServerTimestamp val updatedAt: Timestamp? = null,
+  // Epoch millis, set by the repository when the row is created or updated.
+  val createdAt: Long? = null,
+  val updatedAt: Long? = null,
 )
 
 sealed interface UiState<out T> {

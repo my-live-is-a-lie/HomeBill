@@ -20,7 +20,6 @@
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
 
-# Keep Firestore model classes: Firestore deserialization needs their
-# no-argument constructors and field names, which R8 must not strip or obfuscate.
+# Keep the data model classes (Room entities and values passed to/from JSON) as they are.
 -keep class com.example.data.model.** { *; }
 -keepclassmembers class com.example.data.model.** { *; }

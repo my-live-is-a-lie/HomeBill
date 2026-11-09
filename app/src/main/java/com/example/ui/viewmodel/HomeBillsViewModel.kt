@@ -9,7 +9,6 @@ import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.AP
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
-import com.example.R
 import com.example.data.CurrencyPreferenceStore
 import com.example.data.model.BillCategory
 import com.example.data.model.BillRecord
@@ -30,7 +29,6 @@ import com.example.domain.BudgetDashboardState
 import com.example.domain.MonthlyAnalyticsSummary
 import com.example.domain.MonthlyBudgetDashboardEngine
 import com.example.util.BillImageStore
-import com.google.firebase.firestore.FirebaseFirestore
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -742,10 +740,8 @@ class HomeBillsViewModel(
       initializer {
         val app =
           checkNotNull(this[APPLICATION_KEY]) { "APPLICATION_KEY missing from CreationExtras" }
-        val databaseId = app.getString(R.string.firestore_database_id)
-        val db = FirebaseFirestore.getInstance(databaseId)
         HomeBillsViewModel(
-          repository = BillRepository(db),
+          repository = BillRepository(app.applicationContext),
           scanner = GeminiBillScanner(),
           currentUserId = currentUserId,
           appContext = app.applicationContext,

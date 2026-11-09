@@ -16,7 +16,7 @@ import java.io.FileOutputStream
 
 /**
  * Keeps the scanned bill photo together with the bill. The image is stored privately in the app as
- * `files/bill_images/<billId>.jpg` (so no Firestore schema or security-rules change is needed) and
+ * `files/bill_images/<billId>.jpg` (so the database schema does not change) and
  * can be exported to the phone gallery under Pictures/HomeBill.
  */
 object BillImageStore {

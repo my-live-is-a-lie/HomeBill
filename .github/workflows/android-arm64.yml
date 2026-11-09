@@ -86,17 +86,11 @@ jobs:
 
       - name: Prepare environment & signing keys
         env:
-          GOOGLE_SERVICES_JSON_SECRET: ${{ secrets.GOOGLE_SERVICES_JSON }}
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
         run: |
           # تجهيز ملف .env المطلوب لإضافة Secrets Gradle Plugin
           if [ ! -f .env ]; then
             cp .env.example .env
-          fi
-
-          # دعم تمرير google-services.json اختيارياً عبر GitHub Secrets
-          if [ -n "$GOOGLE_SERVICES_JSON_SECRET" ]; then
-            printf '%s' "$GOOGLE_SERVICES_JSON_SECRET" > app/google-services.json
           fi
 
           # تجهيز مفتاح التوقيع التجريبي debug.keystore من النسخة المشفرة أو توليده تلقائياً

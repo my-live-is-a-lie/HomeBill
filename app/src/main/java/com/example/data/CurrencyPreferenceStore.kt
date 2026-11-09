@@ -12,7 +12,7 @@ import org.json.JSONObject
  * Stores the user's preferred currency on the device only.
  *
  * The value is a short display string (for example "ج.م" or "ر.س"), not an
- * ISO code, and it is never sent to Firebase: it only seeds the currency of
+ * ISO code, and it is never sent anywhere: it only seeds the currency of
  * newly created bills and the fallbacks shown when a category has no bills
  * yet. Bills already saved keep the currency stored on them.
  *

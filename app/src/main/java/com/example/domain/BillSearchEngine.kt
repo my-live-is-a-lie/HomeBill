@@ -64,7 +64,7 @@ object BillSearchEngine {
     )
 
   /**
-   * Filters Firestore [BillRecord] items by store/provider name, date, or expense category,
+   * Filters [BillRecord] items by store/provider name, date, or expense category,
    * preserving their chronological descending sort order.
    */
   fun filterBills(

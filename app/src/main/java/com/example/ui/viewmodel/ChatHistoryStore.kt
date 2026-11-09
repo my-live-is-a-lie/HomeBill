@@ -34,10 +34,8 @@ data class ChatImportResult(
 /**
  * Local-only chat history storage.
  *
- * No new dependency (Room / DataStore are commented out in build.gradle.kts),
- * no network, no Firestore quota: conversations live as one JSON file in the
- * app-private files directory, one file per Firebase user id, so another
- * account on the same phone never sees them.
+ * No network: conversations live as one JSON file in the app-private files
+ * directory, named after the local owner id.
  *
  * File format (versioned, so a future format can migrate):
  * {"version":1,"conversations":[{id,title,createdAtMillis,updatedAtMillis,
@@ -56,7 +54,24 @@ object ChatHistoryStore {
   fun init(context: Context, userId: String) {
     val safeUserId = userId.filter { it.isLetterOrDigit() || it == '-' || it == '_' }
       .ifBlank { "default" }
-    historyFile = File(context.filesDir, "chat_history_$safeUserId.json")
+    val file = File(context.filesDir, "chat_history_$safeUserId.json")
+    historyFile = file
+    adoptLegacyHistoryFile(context, file)
+  }
+
+  // Older versions named the file after a sign-in account id. Without accounts there is one
+  // owner id, so the most recently used legacy file is renamed once to keep that history.
+  private fun adoptLegacyHistoryFile(context: Context, target: File) {
+    if (target.exists()) return
+    runCatching {
+      val legacy =
+        context.filesDir
+          .listFiles { f ->
+            f.isFile && f.name.startsWith("chat_history_") && f.name.endsWith(".json")
+          }
+          ?.maxByOrNull { it.lastModified() }
+      legacy?.renameTo(target)
+    }
   }
 
   fun load(): List<ChatConversation> {

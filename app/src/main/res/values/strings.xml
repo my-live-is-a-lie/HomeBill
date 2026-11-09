@@ -1,16 +1,6 @@
 <resources>
     <string name="app_name">فواتيري</string>
 
-    <!-- Auth Screen -->
-    <string name="auth_headline">إدارة ذكية لفواتير منزلك الشهرية</string>
-    <string name="auth_subtitle">أضف فواتير الغاز والكهرباء والماء، صوّر الفاتورة لاستخراج بياناتها في جدول تفصيلي، وتلقَّ تنبيهات فورية عند ارتفاع الاستهلاك أو التكلفة.</string>
-    <string name="sign_in_with_google">تسجيل الدخول باستخدام Google</string>
-    <string name="sign_out">تسجيل الخروج</string>
-    <string name="auth_feature_scan">مسح ضوئي ذكي واستخراج جدول التفاصيل</string>
-    <string name="auth_feature_alert">تنبيهات فورية عند التفاوت مع الفاتورة السابقة</string>
-    <string name="auth_feature_charts">إحصائيات ورسوم بيانية شهرية للتكاليف</string>
-    <string name="security_prototype_notice">تنبيه أمان النسخة التجريبية: يتضمن التطبيق مفتاح واجهة الذكاء الاصطناعي لأغراض العرض؛ تجنّب مشاركة ملف APK علناً.</string>
-
     <!-- Navigation -->
     <string name="nav_home">الفواتير</string>
     <string name="nav_scan">مسح فاتورة</string>

@@ -26,7 +26,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
-import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Mic
@@ -113,7 +112,6 @@ fun DashboardScreen(
   onOpenScanner: () -> Unit,
   onOpenAssistant: () -> Unit,
   onCreateCategory: (String, UtilityType, String, Double, Boolean) -> Unit,
-  onSignOut: () -> Unit,
   budgetDashboardState: BudgetDashboardState? = null,
   onOpenAnalyticsDashboard: () -> Unit = {},
   onSaveHouseholdBudget: (Double, String, Double) -> Unit = { _, _, _ -> },
@@ -248,17 +246,6 @@ fun DashboardScreen(
             text = stringResource(R.string.app_name),
             style = MaterialTheme.typography.headlineSmall,
           )
-        },
-        actions = {
-          IconButton(
-            onClick = onSignOut,
-            modifier = Modifier.testTag("sign_out_button"),
-          ) {
-            Icon(
-              imageVector = Icons.AutoMirrored.Outlined.Logout,
-              contentDescription = stringResource(R.string.sign_out),
-            )
-          }
         },
         colors =
           TopAppBarDefaults.topAppBarColors(
@@ -407,7 +394,7 @@ fun DashboardScreen(
           }
         }
 
-        // Live Firestore Search Results Section when query is active
+        // Live search results section when a query is active
         if (searchQuery.isNotBlank()) {
           when (filteredBillsState) {
             is UiState.Loading -> {

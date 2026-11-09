@@ -6,7 +6,7 @@ import android.content.SharedPreferences
 /**
  * Stores the end-user's own Gemini API keys on the device only.
  *
- * Keys are never sent to Firebase, never committed to the repo, and never
+ * Keys are never stored off the device, never committed to the repo, and never
  * baked into the APK at build time. They live in the app's private
  * SharedPreferences, which other apps cannot read. The developer's
  * BuildConfig key is intentionally NOT used as a fallback: AI features

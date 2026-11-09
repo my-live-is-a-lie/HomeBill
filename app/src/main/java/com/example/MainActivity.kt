@@ -32,22 +32,17 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.credentials.CredentialManager
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hasRoute
@@ -57,10 +52,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import com.example.data.CurrencyPreferenceStore
+import com.example.data.local.LOCAL_USER_ID
 import com.example.data.model.UiState
-import com.example.ui.auth.AuthScreen
-import com.example.ui.auth.authStateFlow
-import com.example.ui.auth.signOutUser
 import com.example.ui.screens.AnalyticsScreen
 import com.example.ui.screens.BillAssistantScreen
 import com.example.ui.screens.CategoryDetailScreen
@@ -71,9 +64,6 @@ import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.BillChatViewModel
 import com.example.ui.viewmodel.HomeBillsViewModel
 import com.example.util.AssistantImageBridge
-import com.google.firebase.Firebase
-import com.google.firebase.auth.auth
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.serialization.Serializable
 
 @Serializable data object DashboardRoute
@@ -96,56 +86,21 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     setContent {
       MyApplicationTheme {
-        AppRootAuthGate()
+        AppRoot()
       }
     }
   }
 }
 
 @Composable
-fun AppRootAuthGate() {
-  var isAuthResolved by remember { mutableStateOf(false) }
-  var currentUserId by remember { mutableStateOf<String?>(null) }
-
-  LaunchedEffect(Unit) {
-    // Allow ViewRootImpl / SurfaceSyncGroup to commit the initial window frame (<16ms)
-    // before initializing Firebase Auth or Play Services IPC on the main thread.
-    withFrameNanos {}
-    val auth = Firebase.auth
-    currentUserId = auth.currentUser?.uid
-    isAuthResolved = true
-    auth
-      .authStateFlow()
-      .distinctUntilChanged { old, new -> old?.uid == new?.uid }
-      .collect { user ->
-        currentUserId = user?.uid
-        isAuthResolved = true
-      }
-  }
-
-  val uid = currentUserId
-  when {
-    !isAuthResolved -> {
-      Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = MaterialTheme.colorScheme.background,
-        content = {},
-      )
-    }
-    uid == null -> {
-      AuthScreen(onAuthSuccess = {})
-    }
-    else -> {
-      AuthenticatedAppShell(currentUserId = uid)
-    }
-  }
+fun AppRoot() {
+  // Data is stored on the device for a single local user; there is no sign-in step.
+  AppShell(currentUserId = LOCAL_USER_ID)
 }
 
 @Composable
-fun AuthenticatedAppShell(currentUserId: String) {
+fun AppShell(currentUserId: String) {
   val context = LocalContext.current
-  val scope = rememberCoroutineScope()
-
   val vm: HomeBillsViewModel =
     viewModel(
       key = currentUserId,
@@ -470,12 +425,6 @@ fun AuthenticatedAppShell(currentUserId: String) {
                   vm.createCategory(name, uType, unit, threshold, trackDuration) { created ->
                     navController.navigate(CategoryDetailRoute(created.id))
                   }
-                },
-                onSignOut = {
-                  signOutUser(
-                    credentialManager = CredentialManager.create(context),
-                    scope = scope,
-                  )
                 },
                 budgetDashboardState = budgetDashboardState,
                 onOpenAnalyticsDashboard = {

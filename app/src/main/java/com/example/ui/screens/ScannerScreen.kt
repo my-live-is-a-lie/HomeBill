@@ -57,6 +57,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -105,6 +106,7 @@ import com.example.ui.components.CategoryFormDialog
 import com.example.ui.components.ExpressiveButton
 import com.example.ui.components.ExpressiveFab
 import com.example.ui.components.UtilityIconAvatar
+import com.example.ui.components.VoiceBillEntrySheet
 import com.example.ui.theme.LocalUtilityPalette
 import com.example.ui.viewmodel.ScanUiState
 import com.example.util.DateAndFormatUtils
@@ -145,6 +147,12 @@ fun ScannerScreen(
   onSaveScannedBill: (ScannedBillDraft, String?) -> Unit,
   onResetScan: () -> Unit,
   onCreateCategory: (String, UtilityType, String, Double, Boolean) -> Unit,
+  // When set, the create-section dialog offers the template choice and reports it here.
+  onCreateCategoryWithTemplate:
+    ((String, UtilityType, String, Double, Boolean, String) -> Unit)? =
+    null,
+  // Called with the sentence the user dictated in the "add by voice" sheet.
+  onVoiceBillText: (String) -> Unit = {},
 ) {
   val context = LocalContext.current
   var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
@@ -152,6 +160,7 @@ fun ScannerScreen(
   var permissionRequestedOnce by rememberSaveable { mutableStateOf(false) }
   var showCameraXScanner by remember { mutableStateOf(false) }
   var showCreateDialog by remember { mutableStateOf(false) }
+  var showVoiceSheet by remember { mutableStateOf(false) }
 
   val cameraPermissionState =
     rememberPermissionState(permission = Manifest.permission.CAMERA) { isGranted ->
@@ -251,6 +260,22 @@ fun ScannerScreen(
       onSave = { name, uType, unit, threshold, trackDuration ->
         showCreateDialog = false
         onCreateCategory(name, uType, unit, threshold, trackDuration)
+      },
+      onSaveWithTemplate = onCreateCategoryWithTemplate?.let { createWithTemplate ->
+        { name: String, uType: UtilityType, unit: String, threshold: Double, trackDuration: Boolean, templateMode: String ->
+          showCreateDialog = false
+          createWithTemplate(name, uType, unit, threshold, trackDuration, templateMode)
+        }
+      },
+    )
+  }
+
+  if (showVoiceSheet) {
+    VoiceBillEntrySheet(
+      onDismiss = { showVoiceSheet = false },
+      onTextReady = { spokenText ->
+        showVoiceSheet = false
+        onVoiceBillText(spokenText)
       },
     )
   }
@@ -561,6 +586,17 @@ fun ScannerScreen(
           contentDescription = stringResource(R.string.add_category_button),
         )
       }
+      // "Add bill by voice": at the bottom end (the left corner in this right-to-left
+      // layout), opposite the "+" button at BottomStart, so the two stay far apart.
+      ExtendedFloatingActionButton(
+        onClick = { showVoiceSheet = true },
+        icon = { Icon(imageVector = Icons.Default.Mic, contentDescription = null) },
+        text = { Text("إضافة بالصوت") },
+        modifier =
+          Modifier.align(Alignment.BottomEnd)
+            .padding(16.dp)
+            .testTag("scanner_voice_bill_button"),
+      )
     }
   }
 }

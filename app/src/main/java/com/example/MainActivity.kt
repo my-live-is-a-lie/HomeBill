@@ -436,7 +436,6 @@ fun AppShell(currentUserId: String) {
                 onSaveHouseholdBudget = { limit, curr, warn ->
                   vm.saveHouseholdBudget(limit, curr, warn)
                 },
-                onVoiceBillText = openVoiceBill,
               )
             }
 
@@ -529,6 +528,17 @@ fun AppShell(currentUserId: String) {
                 onCreateCategory = { name, uType, unit, threshold, trackDuration ->
                   vm.createCategory(name, uType, unit, threshold, trackDuration)
                 },
+                onCreateCategoryWithTemplate = { name, uType, unit, threshold, trackDuration, mode ->
+                  vm.createCategoryWithTemplate(
+                    name,
+                    uType,
+                    unit,
+                    threshold,
+                    trackDuration,
+                    mode,
+                  )
+                },
+                onVoiceBillText = openVoiceBill,
               )
             }
 

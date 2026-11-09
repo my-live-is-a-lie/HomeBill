@@ -13,7 +13,9 @@ import com.example.data.CurrencyPreferenceStore
 import com.example.data.model.BillCategory
 import com.example.data.model.BillRecord
 import com.example.data.model.BillSheetRow
+import com.example.data.model.BillTemplates
 import com.example.data.model.HouseholdBudget
+import com.example.data.model.TemplateModes
 import com.example.data.model.UiState
 import com.example.data.model.UtilityType
 import com.example.data.remote.GeminiBillScanner
@@ -265,8 +267,44 @@ class HomeBillsViewModel(
     trackDuration: Boolean = false,
     onCreated: (BillCategory) -> Unit = {},
   ) {
+    // Callers that do not choose a template get the ready-made template of the utility type.
+    createCategoryWithTemplate(
+      name = name,
+      utilityType = utilityType,
+      defaultUnit = defaultUnit,
+      alertThresholdPercent = alertThresholdPercent,
+      trackDuration = trackDuration,
+      templateMode = TemplateModes.PRESET,
+      onCreated = onCreated,
+    )
+  }
+
+  /** templateMode is TemplateModes.PRESET (ready-made rows) or TemplateModes.CUSTOM (no template). */
+  fun createCategoryWithTemplate(
+    name: String,
+    utilityType: UtilityType,
+    defaultUnit: String,
+    alertThresholdPercent: Double,
+    trackDuration: Boolean,
+    templateMode: String,
+    onCreated: (BillCategory) -> Unit = {},
+  ) {
     viewModelScope.launch {
       _isSaving.value = true
+      val mode =
+        TemplateModes.normalize(templateMode).takeIf { it != TemplateModes.LEGACY }
+          ?: TemplateModes.PRESET
+      // A new template section starts with the extra rows already added in the user's other
+      // sections of the same utility type. A custom section starts clean.
+      val seedRows =
+        if (mode == TemplateModes.PRESET) {
+          BillTemplates.seedRowsFor(
+            utilityType,
+            (categoriesState.value as? UiState.Success)?.data.orEmpty(),
+          )
+        } else {
+          emptyList()
+        }
       val res =
         repository.createCategory(
           name,
@@ -274,6 +312,8 @@ class HomeBillsViewModel(
           defaultUnit,
           alertThresholdPercent,
           trackDuration,
+          mode,
+          seedRows,
         )
       _isSaving.value = false
       res
@@ -396,6 +436,32 @@ class HomeBillsViewModel(
 
       result
         .onSuccess { savedId ->
+          // Remember rows added to this bill with the section, and dismiss suggested rows the
+          // user dropped. Only a new bill had suggestions seeded into its form, so only a new
+          // bill can dismiss anything. A failure here must never affect the bill that was just
+          // saved, so it is only logged.
+          val savedCategory =
+            (categoriesState.value as? UiState.Success)?.data.orEmpty().firstOrNull {
+              it.id == bill.categoryId
+            }
+          val seededRows =
+            if (bill.id.isBlank() && savedCategory != null) {
+              BillTemplates.suggestedRows(savedCategory)
+            } else {
+              emptyList()
+            }
+          val previousLabelKeys =
+            existingCategoryBills
+              .firstOrNull { it.id == bill.id }
+              ?.sheetItems
+              .orEmpty()
+              .map { BillTemplates.normalizeLabel(it.label) }
+              .toSet()
+          repository
+            .rememberSheetRows(bill.categoryId, bill.sheetItems, seededRows, previousLabelKeys)
+            .onFailure {
+              Log.w(TAG, "Could not remember bill rows for category ${bill.categoryId}", it)
+            }
           if (draftComparison.hasSpike) {
             val pct =
               draftComparison.amountChangePercent ?: draftComparison.consumptionChangePercent ?: 0.0

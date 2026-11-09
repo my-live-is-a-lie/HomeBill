@@ -18,6 +18,9 @@ abstract class BillDao {
   @Query("SELECT * FROM categories WHERE userId = :userId ORDER BY createdAt DESC")
   abstract fun observeCategories(userId: String): Flow<List<BillCategory>>
 
+  @Query("SELECT * FROM categories WHERE id = :categoryId AND userId = :userId LIMIT 1")
+  abstract suspend fun getCategoryById(userId: String, categoryId: String): BillCategory?
+
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   abstract suspend fun upsertCategory(category: BillCategory)
 

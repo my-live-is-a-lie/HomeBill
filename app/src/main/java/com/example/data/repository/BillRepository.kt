@@ -8,7 +8,9 @@ import com.example.data.local.LOCAL_USER_ID
 import com.example.data.model.BillCategory
 import com.example.data.model.BillRecord
 import com.example.data.model.BillSheetRow
+import com.example.data.model.BillTemplates
 import com.example.data.model.HouseholdBudget
+import com.example.data.model.TemplateModes
 import com.example.data.model.UtilityType
 import com.example.domain.BillSearchEngine
 import com.example.domain.BillSearchScope
@@ -81,6 +83,8 @@ class BillRepository(private val dao: BillDao) {
     defaultUnit: String,
     alertThresholdPercent: Double = 25.0,
     trackDuration: Boolean = false,
+    templateMode: String = TemplateModes.PRESET,
+    rememberedRows: List<BillSheetRow> = emptyList(),
   ): Result<BillCategory> =
     safely("createCategory") {
       val now = System.currentTimeMillis()
@@ -95,6 +99,11 @@ class BillRepository(private val dao: BillDao) {
           createdAt = now,
           updatedAt = now,
           trackDuration = trackDuration,
+          // New sections always get an explicit mode; only old documents are LEGACY.
+          templateMode =
+            TemplateModes.normalize(templateMode).takeIf { it != TemplateModes.LEGACY }
+              ?: TemplateModes.PRESET,
+          rememberedRows = BillTemplates.sanitizeRemembered(rememberedRows),
         )
       dao.upsertCategory(category)
       category
@@ -110,9 +119,51 @@ class BillRepository(private val dao: BillDao) {
           name = category.name.trim().take(80).ifBlank { "فاتورة منزلية" },
           defaultUnit = category.defaultUnit.trim().take(20).ifBlank { "وحدة" },
           alertThresholdPercent = category.alertThresholdPercent.coerceIn(5.0, 200.0),
+          templateMode = TemplateModes.normalize(category.templateMode),
+          rememberedRows = BillTemplates.sanitizeRemembered(category.rememberedRows),
+          dismissedRows = BillTemplates.sanitizeDismissed(category.dismissedRows),
           updatedAt = System.currentTimeMillis(),
         )
       )
+    }
+
+  /**
+   * Stores row memory of a saved bill with the section (the category row): labels the user
+   * added are remembered, and suggested rows the user dropped are dismissed (see
+   * BillTemplates.mergeDismissed). Reads the stored category first, so a stale local copy
+   * can never drop rows remembered or dismissed elsewhere.
+   *
+   * [seededRows] are the rows that were pre-filled into this bill's form (empty when editing), and
+   * [previousLabelKeys] are the normalized labels the bill already had before this save.
+   */
+  suspend fun rememberSheetRows(
+    categoryId: String,
+    rows: List<BillSheetRow>,
+    seededRows: List<BillSheetRow> = emptyList(),
+    previousLabelKeys: Set<String> = emptySet(),
+  ): Result<Unit> =
+    safely("rememberSheetRows") {
+      if (categoryId.isNotBlank()) {
+        dao.getCategoryById(LOCAL_USER_ID, categoryId)?.let { current ->
+          val merged = BillTemplates.mergeRemembered(current, rows)
+          val dismissed =
+            BillTemplates.mergeDismissed(
+              current = current.dismissedRows,
+              seeded = seededRows,
+              saved = rows,
+              previousLabelKeys = previousLabelKeys,
+            )
+          if (merged != null || dismissed != null) {
+            dao.upsertCategory(
+              current.copy(
+                rememberedRows = merged ?: current.rememberedRows,
+                dismissedRows = dismissed ?: current.dismissedRows,
+                updatedAt = System.currentTimeMillis(),
+              )
+            )
+          }
+        }
+      }
     }
 
   suspend fun deleteCategoryAndBills(categoryId: String): Result<Unit> =

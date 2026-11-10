@@ -153,6 +153,10 @@
     <string name="camerax_shutter_desc">التقاط صورة الفاتورة</string>
     <string name="camerax_system_camera_fallback">استخدام تطبيق الكاميرا الخارجي</string>
     <string name="camera_open_failed">تعذر فتح الكاميرا على هذا الجهاز. يمكنك اختيار صورة الفاتورة من المعرض بدلاً من ذلك.</string>
+    <string name="scanner_failure_title">تعذّر فتح الماسح</string>
+    <string name="scanner_failure_message">تعذّر تشغيل ماسح المستندات. جرّب مرة أخرى، أو استخدم الكاميرا البديلة. تم حفظ سبب الفشل في سجل تقارير الأعطال.</string>
+    <string name="scanner_failure_retry">إعادة المحاولة</string>
+    <string name="scanner_failure_use_fallback">استخدام الكاميرا البديلة</string>
     <string name="crash_reports_title">تقارير الأعطال</string>
     <string name="crash_reports_back">رجوع</string>
     <string name="crash_report_after_crash_title">توقف التطبيق في المرة السابقة</string>

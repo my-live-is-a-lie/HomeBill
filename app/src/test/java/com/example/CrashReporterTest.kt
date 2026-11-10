@@ -83,4 +83,32 @@ class CrashReporterTest {
     CrashReporter.deleteReport(context, "../../databases/homebill.db")
     assertEquals(1, CrashReporter.listReports(context).size)
   }
+
+  @Test
+  fun recordNonFatal_savesReportWithoutPendingMarker() {
+    CrashReporter.recordNonFatal(
+      context,
+      "Document scanner failed to open",
+      RuntimeException("scan boom"),
+    )
+
+    val report = CrashReporter.listReports(context).single()
+    assertTrue(report.text.contains("Failure: Document scanner failed to open"))
+    assertTrue(report.text.contains("Exception: java.lang.RuntimeException: scan boom"))
+    assertEquals(
+      "Document scanner failed to open: java.lang.RuntimeException: scan boom",
+      report.title,
+    )
+    // A non-fatal failure is only listed, never shown automatically on the next launch.
+    assertNull(CrashReporter.consumePendingReportId(context))
+  }
+
+  @Test
+  fun recordNonFatal_doesNotRemoveCrashReports() {
+    crash("real crash")
+    CrashReporter.recordNonFatal(context, "scanner", RuntimeException("scan boom"))
+
+    assertEquals(2, CrashReporter.listReports(context).size)
+    assertNotNull(CrashReporter.consumePendingReportId(context))
+  }
 }

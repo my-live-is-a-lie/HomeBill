@@ -77,6 +77,25 @@ object CrashReporter {
     pruneOldReports(dir)
   }
 
+  /**
+   * Records a failure that did not crash the app (for example a document scanner that failed
+   * to open). The report appears in the history list, but it is NOT shown automatically on the
+   * next launch, so a non-fatal failure never blocks opening the app.
+   */
+  fun recordNonFatal(context: Context, label: String, throwable: Throwable) {
+    val dir = dirFor(context)
+    dir.mkdirs()
+    val now = System.currentTimeMillis()
+    var file = File(dir, "$FILE_PREFIX$now$FILE_SUFFIX")
+    var attempt = 1
+    while (file.exists()) {
+      file = File(dir, "$FILE_PREFIX${now}_$attempt$FILE_SUFFIX")
+      attempt++
+    }
+    file.writeText(buildReportText(now, Thread.currentThread(), throwable, failureLabel = label))
+    pruneOldReports(dir)
+  }
+
   /** Returns the id of a report that has not been shown yet, and clears the marker. */
   fun consumePendingReportId(context: Context): String? =
     runCatching {
@@ -129,9 +148,16 @@ object CrashReporter {
         .removeSuffix(FILE_SUFFIX)
         .substringBefore('_')
         .toLongOrNull() ?: file.lastModified()
-    val title =
+    val exception =
       text.lineSequence().firstOrNull { it.startsWith("Exception: ") }?.removePrefix("Exception: ")
-        ?: file.name
+    val failure =
+      text.lineSequence().firstOrNull { it.startsWith("Failure: ") }?.removePrefix("Failure: ")
+    val title =
+      when {
+        failure != null && exception != null -> "$failure: $exception"
+        exception != null -> exception
+        else -> file.name
+      }
     return CrashReport(id = file.name, timestampMillis = stamp, title = title, text = text)
   }
 
@@ -144,7 +170,12 @@ object CrashReporter {
     files.drop(MAX_REPORTS).forEach { it.delete() }
   }
 
-  private fun buildReportText(timeMillis: Long, thread: Thread, throwable: Throwable): String {
+  private fun buildReportText(
+    timeMillis: Long,
+    thread: Thread,
+    throwable: Throwable,
+    failureLabel: String? = null,
+  ): String {
     val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z", Locale.US).format(Date(timeMillis))
     val trace =
       StringWriter()
@@ -152,8 +183,9 @@ object CrashReporter {
         .toString()
         .take(MAX_TRACE_CHARS)
     return buildString {
-      appendLine("HomeBill crash report")
+      appendLine(if (failureLabel == null) "HomeBill crash report" else "HomeBill failure report")
       appendLine("Time: $time")
+      if (failureLabel != null) appendLine("Failure: $failureLabel")
       appendLine("Thread: ${thread.name}")
       appendLine("Exception: ${throwable.javaClass.name}: ${throwable.message}")
       appendLine("App version: $appVersion")

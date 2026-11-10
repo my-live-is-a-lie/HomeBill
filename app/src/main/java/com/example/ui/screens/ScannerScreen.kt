@@ -7,6 +7,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.content.IntentSender
 import android.net.Uri
 import android.provider.Settings
 import android.util.Log
@@ -51,6 +52,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -91,6 +93,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
@@ -110,6 +113,7 @@ import com.example.ui.components.UtilityIconAvatar
 import com.example.ui.components.VoiceBillEntrySheet
 import com.example.ui.theme.LocalUtilityPalette
 import com.example.ui.viewmodel.ScanUiState
+import com.example.util.CrashReporter
 import com.example.util.DateAndFormatUtils
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
@@ -162,6 +166,9 @@ fun ScannerScreen(
   var showCameraXScanner by remember { mutableStateOf(false) }
   var showCreateDialog by remember { mutableStateOf(false) }
   var showVoiceSheet by remember { mutableStateOf(false) }
+  // The reason the ML Kit scanner failed to open, shown in a dialog instead of silently
+  // falling back to the CameraX dialog. Null when the scanner opened (or was not tried).
+  var scannerFailure by remember { mutableStateOf<ScannerFailure?>(null) }
 
   val cameraPermissionState =
     rememberPermissionState(permission = Manifest.permission.CAMERA) { isGranted ->
@@ -198,6 +205,17 @@ fun ScannerScreen(
   // Last step of the camera chain: tell the user instead of crashing.
   fun showCameraFailure() {
     Toast.makeText(context, context.getString(R.string.camera_open_failed), Toast.LENGTH_LONG).show()
+  }
+
+  // Records a scanner failure in the local reports (Settings > crash reports) and shows its
+  // reason on screen, instead of silently falling back to the CameraX dialog.
+  fun reportScannerFailure(throwable: Throwable) {
+    val detail = "${throwable.javaClass.simpleName}: ${throwable.message ?: "unknown reason"}"
+    Log.w("ScannerScreen", "Document scanner failed to open: $detail", throwable)
+    runCatching {
+      CrashReporter.recordNonFatal(context, "Document scanner failed to open", throwable)
+    }
+    scannerFailure = ScannerFailure(detail)
   }
 
   // Last-resort capture path. Creating the file, building the FileProvider uri and launching the
@@ -255,23 +273,28 @@ fun ScannerScreen(
           ) == true
         ) {
           // The scanner's IntentSender could not be started; the launcher reports that as a
-          // cancelled result carrying the exception, so move on to the CameraX dialog here.
-          Log.w("ScannerScreen", "Document scanner IntentSender failed to start")
-          openLegacyCamera()
+          // cancelled result carrying the exception, so show its reason instead of falling back
+          // silently.
+          val sendException = result.data?.readSendIntentException()
+          reportScannerFailure(
+            sendException ?: Exception("Document scanner IntentSender failed to start")
+          )
         }
       } catch (e: Exception) {
         Log.w("ScannerScreen", "Document scanner result could not be read", e)
-        showCameraFailure()
+        reportScannerFailure(e)
       }
     }
 
-  // First step of the camera chain: ML Kit document scanner. Every synchronous step is guarded and
-  // any failure falls back to the CameraX dialog, then the system camera, then an error message.
+  // First step of the camera chain: ML Kit document scanner. Every failure is recorded and
+  // its reason shown, instead of silently falling back to the CameraX dialog.
   fun launchDocumentScanner() {
     try {
       val activity = context.findActivity()
       if (activity == null) {
-        openLegacyCamera()
+        reportScannerFailure(
+          IllegalStateException("No activity available to open the document scanner")
+        )
         return
       }
       // SCANNER_MODE_FULL = crop/rotate + image filters (grayscale, auto-enhance, ...) +
@@ -289,21 +312,17 @@ fun ScannerScreen(
           try {
             documentScannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
           } catch (e: Exception) {
-            Log.w("ScannerScreen", "Document scanner could not be launched", e)
-            openLegacyCamera()
+            reportScannerFailure(e)
           }
         }
         .addOnFailureListener { e ->
-          Log.w("ScannerScreen", "Document scanner unavailable", e)
-          openLegacyCamera()
+          reportScannerFailure(e)
         }
     } catch (e: Exception) {
-      Log.w("ScannerScreen", "Document scanner setup failed", e)
-      openLegacyCamera()
+      reportScannerFailure(e)
     } catch (e: LinkageError) {
       // The scanner classes could not be loaded at all.
-      Log.w("ScannerScreen", "Document scanner classes are unavailable", e)
-      openLegacyCamera()
+      reportScannerFailure(e)
     }
   }
 
@@ -345,6 +364,20 @@ fun ScannerScreen(
         // The live preview cannot start: close the dialog and use the system camera instead.
         showCameraXScanner = false
         launchSystemCameraFallback()
+      },
+    )
+  }
+
+  scannerFailure?.let { failure ->
+    ScannerFailureDialog(
+      detail = failure.detail,
+      onRetry = {
+        scannerFailure = null
+        launchDocumentScanner()
+      },
+      onUseFallback = {
+        scannerFailure = null
+        openLegacyCamera()
       },
     )
   }
@@ -1362,4 +1395,56 @@ private fun ExtractedSheetReviewCard(
       }
     }
   }
+}
+
+// Reason the ML Kit document scanner failed to open, shown to the user and recorded locally.
+private data class ScannerFailure(val detail: String)
+
+// The framework reports a failed IntentSender start as a cancelled result carrying the
+// exception; read it out so the real reason can be shown and recorded.
+@Suppress("DEPRECATION")
+private fun Intent.readSendIntentException(): IntentSender.SendIntentException? =
+  getParcelableExtra(
+    ActivityResultContracts.StartIntentSenderForResult.EXTRA_SEND_INTENT_EXCEPTION
+  )
+
+@Composable
+private fun ScannerFailureDialog(
+  detail: String,
+  onRetry: () -> Unit,
+  onUseFallback: () -> Unit,
+) {
+  AlertDialog(
+    // Dismissing the dialog falls back to the CameraX dialog, as before.
+    onDismissRequest = onUseFallback,
+    title = { Text(stringResource(R.string.scanner_failure_title)) },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(stringResource(R.string.scanner_failure_message))
+        // The reason is technical English text, so it is always shown left-to-right.
+        Text(
+          text = detail,
+          style =
+            MaterialTheme.typography.bodySmall.copy(
+              fontFamily = FontFamily.Monospace,
+              textDirection = TextDirection.Ltr,
+              textAlign = TextAlign.Left,
+            ),
+        )
+      }
+    },
+    confirmButton = {
+      TextButton(onClick = onRetry, modifier = Modifier.testTag("scanner_failure_retry")) {
+        Text(stringResource(R.string.scanner_failure_retry))
+      }
+    },
+    dismissButton = {
+      TextButton(
+        onClick = onUseFallback,
+        modifier = Modifier.testTag("scanner_failure_use_fallback"),
+      ) {
+        Text(stringResource(R.string.scanner_failure_use_fallback))
+      }
+    },
+  )
 }

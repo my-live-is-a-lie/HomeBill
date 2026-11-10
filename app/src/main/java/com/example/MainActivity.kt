@@ -547,6 +547,7 @@ fun AppShell(currentUserId: String) {
                   }
                 },
                 onResetScan = { vm.resetScanState() },
+                onCancelScan = { vm.cancelScan() },
                 onCreateCategory = { name, uType, unit, threshold, trackDuration ->
                   vm.createCategory(name, uType, unit, threshold, trackDuration)
                 },

@@ -431,6 +431,7 @@ fun AppShell(currentUserId: String) {
                     existingCategoryBills = catBills,
                   )
                 },
+                onDeleteBill = { billId -> vm.deleteBill(billId) },
                 onOpenCategory = { catId ->
                   navController.navigate(CategoryDetailRoute(catId))
                 },

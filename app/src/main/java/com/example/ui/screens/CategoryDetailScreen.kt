@@ -70,6 +70,7 @@ import com.example.domain.BillComparisonResult
 import com.example.domain.BillSearchEngine
 import com.example.domain.BillSearchScope
 import com.example.ui.components.BillComparisonModal
+import com.example.ui.components.BillDeleteConfirmationDialog
 import com.example.ui.components.BillFormBottomSheet
 import com.example.ui.components.BillSearchEmptyStateCard
 import com.example.ui.components.BillSheetModal
@@ -190,6 +191,7 @@ fun CategoryDetailScreen(
         showAddOrEditBill = true
       },
       onDismiss = { activeSheetBill = null },
+      onDeleteBill = { billId -> onDeleteBill(billId) },
       durationTracked = category.trackDuration,
       onStartConsumption = { bill -> onStartBillConsumption(bill) },
       onEndConsumption = { bill ->
@@ -241,6 +243,7 @@ fun CategoryDetailScreen(
   if (showDeleteCategoryConfirm) {
     AlertDialog(
       onDismissRequest = { showDeleteCategoryConfirm = false },
+      modifier = Modifier.testTag("delete_category_confirmation_dialog"),
       title = { Text(stringResource(R.string.delete_category_confirm_title)) },
       text = { Text(stringResource(R.string.delete_category_confirm_body)) },
       confirmButton = {
@@ -248,7 +251,8 @@ fun CategoryDetailScreen(
           onClick = {
             showDeleteCategoryConfirm = false
             onDeleteCategory(category.id)
-          }
+          },
+          modifier = Modifier.testTag("confirm_category_delete_button"),
         ) {
           Text(stringResource(R.string.action_delete))
         }
@@ -296,7 +300,10 @@ fun CategoryDetailScreen(
               contentDescription = stringResource(R.string.dialog_edit_category_title),
             )
           }
-          IconButton(onClick = { showDeleteCategoryConfirm = true }) {
+          IconButton(
+            onClick = { showDeleteCategoryConfirm = true },
+            modifier = Modifier.testTag("delete_category_button"),
+          ) {
             Icon(
               imageVector = Icons.Default.DeleteOutline,
               contentDescription = stringResource(R.string.action_delete),
@@ -580,6 +587,17 @@ private fun MonthlyBillCard(
   onOpenComparison: () -> Unit,
   onDelete: () -> Unit,
 ) {
+  var showDeleteConfirmation by remember(bill.id) { mutableStateOf(false) }
+  if (showDeleteConfirmation) {
+    BillDeleteConfirmationDialog(
+      onDismissRequest = { showDeleteConfirmation = false },
+      onConfirm = {
+        showDeleteConfirmation = false
+        onDelete()
+      },
+    )
+  }
+
   Card(
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     elevation = CardDefaults.cardElevation(defaultElevation = 1.5.dp),
@@ -670,7 +688,7 @@ private fun MonthlyBillCard(
             color = MaterialTheme.colorScheme.primary,
           )
           IconButton(
-            onClick = onDelete,
+            onClick = { showDeleteConfirmation = true },
             modifier = Modifier.size(48.dp).testTag("delete_bill_${bill.id}"),
           ) {
             Icon(

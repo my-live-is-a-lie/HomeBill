@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
@@ -32,12 +33,24 @@ import coil.compose.AsyncImage
 import com.example.R
 import java.io.File
 
-/**
- * Full-screen image viewer: pinch to zoom, drag to pan, double tap to zoom in/out, and an X button
- * to close it.
- */
+/** Existing file-based entry point, retained for current callers. */
 @Composable
 fun FullscreenImageViewer(imageFile: File, onDismiss: () -> Unit) {
+  FullscreenImageViewerContent(imageModel = imageFile, onDismiss = onDismiss)
+}
+
+/** URI-based entry point for the cropped image returned by ML Kit. */
+@Composable
+fun FullscreenImageViewer(imageUri: Uri, onDismiss: () -> Unit) {
+  FullscreenImageViewerContent(imageModel = imageUri, onDismiss = onDismiss)
+}
+
+/**
+ * Full-screen image viewer: pinch to zoom, drag to pan, double tap to zoom in/out.
+ * When not zoomed, a sufficiently fast upward drag closes the viewer.
+ */
+@Composable
+private fun FullscreenImageViewerContent(imageModel: Any, onDismiss: () -> Unit) {
   Dialog(
     onDismissRequest = onDismiss,
     properties = DialogProperties(usePlatformDefaultWidth = false),
@@ -45,22 +58,34 @@ fun FullscreenImageViewer(imageFile: File, onDismiss: () -> Unit) {
     var scale by remember { mutableFloatStateOf(1f) }
     var offsetX by remember { mutableFloatStateOf(0f) }
     var offsetY by remember { mutableFloatStateOf(0f) }
+    var pullUpOffset by remember { mutableFloatStateOf(0f) }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
       AsyncImage(
-        model = imageFile,
+        model = imageModel,
         contentDescription = stringResource(R.string.bill_image_content_desc),
         contentScale = ContentScale.Fit,
         modifier =
           Modifier.fillMaxSize()
             .pointerInput(Unit) {
+              var dismissTriggered = false
               detectTransformGestures { _, pan, zoom, _ ->
                 val newScale = (scale * zoom).coerceIn(1f, 8f)
                 scale = newScale
                 if (newScale <= 1.01f) {
                   offsetX = 0f
                   offsetY = 0f
+                  if (pan.y < 0f) {
+                    pullUpOffset = (pullUpOffset + pan.y).coerceAtLeast(-220.dp.toPx())
+                    if (!dismissTriggered && pullUpOffset <= -120.dp.toPx()) {
+                      dismissTriggered = true
+                      onDismiss()
+                    }
+                  } else if (pan.y > 0f) {
+                    pullUpOffset = 0f
+                  }
                 } else {
+                  pullUpOffset = 0f
                   val maxX = size.width * (newScale - 1f) / 2f
                   val maxY = size.height * (newScale - 1f) / 2f
                   offsetX = (offsetX + pan.x).coerceIn(-maxX, maxX)
@@ -75,6 +100,7 @@ fun FullscreenImageViewer(imageFile: File, onDismiss: () -> Unit) {
                     scale = 1f
                     offsetX = 0f
                     offsetY = 0f
+                    pullUpOffset = 0f
                   } else {
                     scale = 2.5f
                   }
@@ -85,7 +111,7 @@ fun FullscreenImageViewer(imageFile: File, onDismiss: () -> Unit) {
               scaleX = scale
               scaleY = scale
               translationX = offsetX
-              translationY = offsetY
+              translationY = offsetY + pullUpOffset
             },
       )
 

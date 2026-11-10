@@ -87,6 +87,11 @@ class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     // First, so that anything that fails later in startup is also recorded locally.
     CrashReporter.install(this)
+    // ML Kit is initialized manually here (its auto-init provider is disabled in the
+    // manifest): the provider initializes MlKitContext at process start, which on some
+    // devices leaves the component runtime without SharedPrefManager and makes the
+    // document scanner throw a NullPointerException inside GmsDocumentScanning.getClient.
+    com.google.mlkit.common.MlKit.initialize(applicationContext)
     com.example.data.remote.UserGeminiKeyStore.init(this)
     com.example.data.CurrencyPreferenceStore.init(this)
     enableEdgeToEdge()

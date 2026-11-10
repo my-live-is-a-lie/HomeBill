@@ -352,6 +352,9 @@ fun ScannerScreen(
           .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
           .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
           .build()
+      // Make sure ML Kit is initialized before creating the client (its auto-init provider
+      // is disabled in the manifest). This is a no-op once ML Kit is already initialized.
+      com.google.mlkit.common.MlKit.initialize(context.applicationContext)
       val scanner = GmsDocumentScanning.getClient(options)
       ModuleInstall.getClient(context)
         .areModulesAvailable(scanner)

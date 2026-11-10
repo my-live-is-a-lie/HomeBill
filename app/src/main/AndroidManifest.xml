@@ -51,6 +51,16 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- ML Kit's auto-init provider initializes MlKitContext at process start, before
+             the app is fully up. On this device that leaves the component runtime without
+             SharedPrefManager, so GmsDocumentScanning.getClient throws a NullPointerException
+             inside the scanner library. Disable it and initialize ML Kit manually in
+             MainActivity.onCreate instead. -->
+        <provider
+            android:name="com.google.mlkit.common.internal.MlKitInitProvider"
+            android:authorities="${applicationId}.mlkitinitprovider"
+            tools:node="remove" />
     </application>
 
 </manifest>

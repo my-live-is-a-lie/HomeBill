@@ -636,12 +636,11 @@ fun ScannerScreen(
 
                   Spacer(modifier = Modifier.height(10.dp))
 
+                  // Use the same ML Kit document-scanner flow as camera capture.
+                  // Gallery import is enabled in the scanner options, so selected photos get
+                  // the same crop, rotation, filters and confirmation stage before OCR starts.
                   ExpressiveButton(
-                    onClick = {
-                      photoPickerLauncher.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                      )
-                    },
+                    onClick = { launchDocumentScanner() },
                     tonal = true,
                     modifier =
                       Modifier.fillMaxWidth()

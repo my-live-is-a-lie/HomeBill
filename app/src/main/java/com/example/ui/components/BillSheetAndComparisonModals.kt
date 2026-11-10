@@ -92,6 +92,7 @@ fun BillSheetModal(
   comparison: BillComparisonResult?,
   onEditBill: () -> Unit,
   onDismiss: () -> Unit,
+  onDeleteBill: (String) -> Unit = {},
   durationTracked: Boolean = false,
   onStartConsumption: (BillRecord) -> Unit = {},
   onEndConsumption: (BillRecord) -> Unit = {},
@@ -103,10 +104,22 @@ fun BillSheetModal(
       BillImageStore.imageFile(context, bill.id).takeIf { it.exists() && it.length() > 0L }
     }
   var showFullImage by remember { mutableStateOf(false) }
+  var showDeleteConfirmation by remember(bill.id) { mutableStateOf(false) }
 
   // Full-screen viewer for the original bill image (zoom, pan, X to close).
   if (showFullImage && attachedImage != null) {
     FullscreenImageViewer(imageFile = attachedImage, onDismiss = { showFullImage = false })
+  }
+
+  if (showDeleteConfirmation) {
+    BillDeleteConfirmationDialog(
+      onDismissRequest = { showDeleteConfirmation = false },
+      onConfirm = {
+        showDeleteConfirmation = false
+        onDismiss()
+        onDeleteBill(bill.id)
+      },
+    )
   }
 
   ModalBottomSheet(
@@ -149,6 +162,16 @@ fun BillSheetModal(
             Icon(
               imageVector = Icons.Default.Edit,
               contentDescription = stringResource(R.string.form_edit_bill_title),
+            )
+          }
+          IconButton(
+            onClick = { showDeleteConfirmation = true },
+            modifier = Modifier.testTag("sheet_delete_bill_button"),
+          ) {
+            Icon(
+              imageVector = Icons.Default.DeleteOutline,
+              contentDescription = stringResource(R.string.action_delete),
+              tint = MaterialTheme.colorScheme.error,
             )
           }
           IconButton(
@@ -427,6 +450,37 @@ fun BillSheetModal(
     }
   }
 }
+
+
+@Composable
+fun BillDeleteConfirmationDialog(
+  onDismissRequest: () -> Unit,
+  onConfirm: () -> Unit,
+) {
+  AlertDialog(
+    onDismissRequest = onDismissRequest,
+    title = { Text(stringResource(R.string.delete_bill_confirm_title)) },
+    text = { Text(stringResource(R.string.delete_bill_confirm_body)) },
+    confirmButton = {
+      Button(
+        onClick = onConfirm,
+        modifier = Modifier.testTag("confirm_bill_delete_button"),
+      ) {
+        Text(stringResource(R.string.action_delete))
+      }
+    },
+    dismissButton = {
+      TextButton(
+        onClick = onDismissRequest,
+        modifier = Modifier.testTag("cancel_bill_delete_button"),
+      ) {
+        Text(stringResource(R.string.action_cancel))
+      }
+    },
+    modifier = Modifier.testTag("bill_delete_confirmation_dialog"),
+  )
+}
+
 
 // Consumption start/end tracking for bills in duration-tracked categories. Exactly one primary
 // action is shown at a time: start first, then end once started, then the end record once ended.

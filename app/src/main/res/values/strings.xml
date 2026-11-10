@@ -152,6 +152,21 @@
     <string name="camerax_flash_desc">تبديل الإضاءة (الفلاش)</string>
     <string name="camerax_shutter_desc">التقاط صورة الفاتورة</string>
     <string name="camerax_system_camera_fallback">استخدام تطبيق الكاميرا الخارجي</string>
+    <string name="camera_open_failed">تعذر فتح الكاميرا على هذا الجهاز. يمكنك اختيار صورة الفاتورة من المعرض بدلاً من ذلك.</string>
+    <string name="crash_reports_title">تقارير الأعطال</string>
+    <string name="crash_reports_back">رجوع</string>
+    <string name="crash_report_after_crash_title">توقف التطبيق في المرة السابقة</string>
+    <string name="crash_report_hint">حدث عطل غير متوقع. التقرير محفوظ على جهازك فقط ولم يُرسل إلى أي جهة، ويمكنك نسخه أو مشاركته يدوياً.</string>
+    <string name="crash_report_copy">نسخ</string>
+    <string name="crash_report_share">مشاركة</string>
+    <string name="crash_report_clear">مسح</string>
+    <string name="crash_report_continue">متابعة إلى التطبيق</string>
+    <string name="crash_report_copied">تم نسخ التقرير</string>
+    <string name="crash_report_action_failed">تعذر تنفيذ العملية</string>
+    <string name="crash_reports_empty">لا توجد تقارير أعطال محفوظة.</string>
+    <string name="crash_reports_delete_all">حذف كل التقارير</string>
+    <string name="crash_reports_settings_summary_none">لا توجد تقارير أعطال محفوظة. تُحفظ التقارير على جهازك فقط.</string>
+    <string name="crash_reports_settings_summary">%1$d تقرير محفوظ على جهازك فقط — اعرضها أو احذفها.</string>
     <string name="camerax_unavailable_error">تعذر تشغيل معاينة الكاميرا المباشرة على هذا الجهاز.</string>
 
     <!-- Gemini Bill Assistant Chatbot -->

@@ -47,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -72,8 +73,12 @@ fun CameraXBillCaptureDialog(
   onImageCaptured: (Uri) -> Unit,
   onUseSystemCamera: () -> Unit,
   onDismiss: () -> Unit,
+  // Called when the live preview cannot start at all. The caller can then switch to another
+  // capture path; if it does nothing, the error panel with the system-camera button stays visible.
+  onUnavailable: () -> Unit = {},
 ) {
   val context = LocalContext.current
+  val currentOnUnavailable by rememberUpdatedState(onUnavailable)
   val lifecycleOwner = LocalLifecycleOwner.current
 
   var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
@@ -83,25 +88,51 @@ fun CameraXBillCaptureDialog(
   var isCapturing by remember { mutableStateOf(false) }
   var cameraError by remember { mutableStateOf<String?>(null) }
 
-  val previewView = remember {
-    PreviewView(context).apply {
-      implementationMode = PreviewView.ImplementationMode.COMPATIBLE
-      scaleType = PreviewView.ScaleType.FILL_CENTER
+  // Null when the preview view itself cannot be created on this device.
+  val previewView =
+    remember {
+      try {
+        PreviewView(context).apply {
+          implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+          scaleType = PreviewView.ScaleType.FILL_CENTER
+        }
+      } catch (e: Exception) {
+        Log.w("CameraXBillCapture", "Failed to create PreviewView", e)
+        null
+      }
     }
-  }
 
   val fallbackErrorText = stringResource(R.string.camerax_unavailable_error)
 
+  // Shows the error panel and lets the caller move on to the next capture path.
+  fun failPreview(reason: Throwable?) {
+    if (reason != null) Log.w("CameraXBillCapture", "CameraX preview unavailable", reason)
+    cameraError = fallbackErrorText
+    currentOnUnavailable()
+  }
+
   LaunchedEffect(lifecycleOwner) {
-    val providerFuture = ProcessCameraProvider.getInstance(context)
-    providerFuture.addListener(
+    val view = previewView
+    if (view == null) {
+      failPreview(null)
+      return@LaunchedEffect
+    }
+    val providerFuture =
+      try {
+        ProcessCameraProvider.getInstance(context)
+      } catch (e: Exception) {
+        failPreview(e)
+        return@LaunchedEffect
+      }
+    try {
+      providerFuture.addListener(
       {
         try {
           val provider = providerFuture.get()
           cameraProviderRef = provider
 
           val previewUseCase =
-            Preview.Builder().build().also { it.surfaceProvider = previewView.surfaceProvider }
+            Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
 
           val captureUseCase =
             ImageCapture.Builder()
@@ -118,7 +149,7 @@ fun CameraXBillCaptureDialog(
             }
 
           if (selector == null) {
-            cameraError = fallbackErrorText
+            failPreview(null)
           } else {
             provider.unbindAll()
             boundCamera =
@@ -127,12 +158,14 @@ fun CameraXBillCaptureDialog(
             cameraError = null
           }
         } catch (e: Exception) {
-          Log.w("CameraXBillCapture", "Failed to bind CameraX use cases", e)
-          cameraError = fallbackErrorText
+          failPreview(e)
         }
       },
       ContextCompat.getMainExecutor(context),
-    )
+      )
+    } catch (e: Exception) {
+      failPreview(e)
+    }
   }
 
   DisposableEffect(Unit) {
@@ -164,10 +197,12 @@ fun CameraXBillCaptureDialog(
           .testTag("camerax_scanner_dialog")
     ) {
       if (cameraError == null) {
-        AndroidView(
-          factory = { previewView },
-          modifier = Modifier.fillMaxSize(),
-        )
+        previewView?.let { preview ->
+          AndroidView(
+            factory = { preview },
+            modifier = Modifier.fillMaxSize(),
+          )
+        }
         DocumentFramingOverlay(accentColor = frameAccentColor)
       } else {
         Column(
@@ -273,30 +308,44 @@ fun CameraXBillCaptureDialog(
                 val capture = imageCapture ?: return@FilledIconButton
                 if (isCapturing) return@FilledIconButton
                 isCapturing = true
-                val photoFile = File.createTempFile("bill_camerax_", ".jpg", context.cacheDir)
-                val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
-                capture.takePicture(
-                  outputOptions,
-                  ContextCompat.getMainExecutor(context),
-                  object : ImageCapture.OnImageSavedCallback {
-                    override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                      isCapturing = false
-                      val savedUri =
-                        FileProvider.getUriForFile(
-                          context,
-                          "${context.packageName}.fileprovider",
-                          photoFile,
-                        )
-                      onImageCaptured(savedUri)
-                    }
+                // Creating the file and starting the capture can both throw synchronously
+                // (storage full, camera already closed); show the error panel instead of crashing.
+                try {
+                  val photoFile = File.createTempFile("bill_camerax_", ".jpg", context.cacheDir)
+                  val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+                  capture.takePicture(
+                    outputOptions,
+                    ContextCompat.getMainExecutor(context),
+                    object : ImageCapture.OnImageSavedCallback {
+                      override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                        isCapturing = false
+                        val savedUri =
+                          try {
+                            FileProvider.getUriForFile(
+                              context,
+                              "${context.packageName}.fileprovider",
+                              photoFile,
+                            )
+                          } catch (e: Exception) {
+                            Log.e("CameraXBillCapture", "Could not share the captured photo", e)
+                            cameraError = fallbackErrorText
+                            return
+                          }
+                        onImageCaptured(savedUri)
+                      }
 
-                    override fun onError(exception: ImageCaptureException) {
-                      Log.e("CameraXBillCapture", "Photo capture failed", exception)
-                      isCapturing = false
-                      cameraError = fallbackErrorText
-                    }
-                  },
-                )
+                      override fun onError(exception: ImageCaptureException) {
+                        Log.e("CameraXBillCapture", "Photo capture failed", exception)
+                        isCapturing = false
+                        cameraError = fallbackErrorText
+                      }
+                    },
+                  )
+                } catch (e: Exception) {
+                  Log.e("CameraXBillCapture", "Could not start photo capture", e)
+                  isCapturing = false
+                  cameraError = fallbackErrorText
+                }
               },
               enabled = !isCapturing && imageCapture != null,
               shape = CircleShape,

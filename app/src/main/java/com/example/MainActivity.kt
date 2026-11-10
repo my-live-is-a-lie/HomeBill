@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.automirrored.outlined.ReceiptLong
@@ -36,7 +37,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -57,6 +60,7 @@ import com.example.data.model.UiState
 import com.example.ui.screens.AnalyticsScreen
 import com.example.ui.screens.BillAssistantScreen
 import com.example.ui.screens.CategoryDetailScreen
+import com.example.ui.screens.CrashReportsScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.ScannerScreen
 import com.example.ui.screens.SettingsScreen
@@ -64,6 +68,7 @@ import com.example.ui.theme.MyApplicationTheme
 import com.example.ui.viewmodel.BillChatViewModel
 import com.example.ui.viewmodel.HomeBillsViewModel
 import com.example.util.AssistantImageBridge
+import com.example.util.CrashReporter
 import kotlinx.serialization.Serializable
 
 @Serializable data object DashboardRoute
@@ -80,6 +85,8 @@ import kotlinx.serialization.Serializable
 
 class MainActivity : ComponentActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
+    // First, so that anything that fails later in startup is also recorded locally.
+    CrashReporter.install(this)
     com.example.data.remote.UserGeminiKeyStore.init(this)
     com.example.data.CurrencyPreferenceStore.init(this)
     enableEdgeToEdge()
@@ -94,8 +101,23 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AppRoot() {
-  // Data is stored on the device for a single local user; there is no sign-in step.
-  AppShell(currentUserId = LOCAL_USER_ID)
+  val context = LocalContext.current
+  // After a crash, the report is shown once before the app opens. The app itself is only composed
+  // afterwards, so a crash that happens on every start can still be read and copied.
+  var pendingCrashReportId by
+    rememberSaveable { mutableStateOf(CrashReporter.consumePendingReportId(context)) }
+  val crashReportId = pendingCrashReportId
+  if (crashReportId != null) {
+    Box(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
+      CrashReportsScreen(
+        initialReportId = crashReportId,
+        onClose = { pendingCrashReportId = null },
+      )
+    }
+  } else {
+    // Data is stored on the device for a single local user; there is no sign-in step.
+    AppShell(currentUserId = LOCAL_USER_ID)
+  }
 }
 
 @Composable

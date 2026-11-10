@@ -9,6 +9,7 @@ import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
@@ -194,11 +195,23 @@ fun ScannerScreen(
       }
     }
 
+  // Last step of the camera chain: tell the user instead of crashing.
+  fun showCameraFailure() {
+    Toast.makeText(context, context.getString(R.string.camera_open_failed), Toast.LENGTH_LONG).show()
+  }
+
+  // Last-resort capture path. Creating the file, building the FileProvider uri and launching the
+  // system camera can all throw (storage full, no camera app, missing CAMERA permission).
   fun launchSystemCameraFallback() {
-    val tempFile = File.createTempFile("bill_scan_", ".jpg", context.cacheDir)
-    val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", tempFile)
-    pendingCameraUri = uri
-    takePictureLauncher.launch(uri)
+    try {
+      val tempFile = File.createTempFile("bill_scan_", ".jpg", context.cacheDir)
+      val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", tempFile)
+      pendingCameraUri = uri
+      takePictureLauncher.launch(uri)
+    } catch (e: Exception) {
+      Log.w("ScannerScreen", "System camera could not be launched", e)
+      showCameraFailure()
+    }
   }
 
   val photoPickerLauncher =
@@ -208,50 +221,90 @@ fun ScannerScreen(
       }
     }
 
+  // Second step of the camera chain: the CameraX dialog (needs the camera permission). If even
+  // this step cannot start, the system camera is tried next.
+  fun openLegacyCamera() {
+    try {
+      if (isCameraGranted) {
+        showCameraXScanner = true
+      } else {
+        permissionRequestedOnce = true
+        cameraPermissionState.launchPermissionRequest()
+      }
+    } catch (e: Exception) {
+      Log.w("ScannerScreen", "CameraX dialog could not be opened", e)
+      showCameraXScanner = false
+      launchSystemCameraFallback()
+    }
+  }
+
   // ML Kit Document Scanner: detects the bill edges automatically, lets the user adjust the
   // crop, and returns only the cropped bill image (so Gemini gets less irrelevant content).
   val documentScannerLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
-      if (result.resultCode == Activity.RESULT_OK) {
-        val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
-        val croppedUri = scanResult?.pages?.firstOrNull()?.imageUri
-        if (croppedUri != null) {
-          onImageSelected(croppedUri)
+      try {
+        if (result.resultCode == Activity.RESULT_OK) {
+          val scanResult = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
+          val croppedUri = scanResult?.pages?.firstOrNull()?.imageUri
+          if (croppedUri != null) {
+            onImageSelected(croppedUri)
+          }
+        } else if (
+          result.data?.hasExtra(
+            ActivityResultContracts.StartIntentSenderForResult.EXTRA_SEND_INTENT_EXCEPTION
+          ) == true
+        ) {
+          // The scanner's IntentSender could not be started; the launcher reports that as a
+          // cancelled result carrying the exception, so move on to the CameraX dialog here.
+          Log.w("ScannerScreen", "Document scanner IntentSender failed to start")
+          openLegacyCamera()
         }
+      } catch (e: Exception) {
+        Log.w("ScannerScreen", "Document scanner result could not be read", e)
+        showCameraFailure()
       }
     }
 
-  // Old capture flow (CameraX dialog), kept as a fallback if the document scanner is unavailable.
-  fun openLegacyCamera() {
-    if (isCameraGranted) {
-      showCameraXScanner = true
-    } else {
-      permissionRequestedOnce = true
-      cameraPermissionState.launchPermissionRequest()
-    }
-  }
-
+  // First step of the camera chain: ML Kit document scanner. Every synchronous step is guarded and
+  // any failure falls back to the CameraX dialog, then the system camera, then an error message.
   fun launchDocumentScanner() {
-    val activity = context.findActivity()
-    if (activity == null) {
-      openLegacyCamera()
-      return
-    }
-    // SCANNER_MODE_FULL = crop/rotate + image filters (grayscale, auto-enhance, ...) +
-    // ML-powered cleaning (removes stains / fingers), all available after the capture.
-    val options =
-      GmsDocumentScannerOptions.Builder()
-        .setGalleryImportAllowed(true)
-        .setPageLimit(1)
-        .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
-        .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
-        .build()
-    GmsDocumentScanning.getClient(options)
-      .getStartScanIntent(activity)
-      .addOnSuccessListener { intentSender ->
-        documentScannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+    try {
+      val activity = context.findActivity()
+      if (activity == null) {
+        openLegacyCamera()
+        return
       }
-      .addOnFailureListener { openLegacyCamera() }
+      // SCANNER_MODE_FULL = crop/rotate + image filters (grayscale, auto-enhance, ...) +
+      // ML-powered cleaning (removes stains / fingers), all available after the capture.
+      val options =
+        GmsDocumentScannerOptions.Builder()
+          .setGalleryImportAllowed(true)
+          .setPageLimit(1)
+          .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+          .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+          .build()
+      GmsDocumentScanning.getClient(options)
+        .getStartScanIntent(activity)
+        .addOnSuccessListener { intentSender ->
+          try {
+            documentScannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+          } catch (e: Exception) {
+            Log.w("ScannerScreen", "Document scanner could not be launched", e)
+            openLegacyCamera()
+          }
+        }
+        .addOnFailureListener { e ->
+          Log.w("ScannerScreen", "Document scanner unavailable", e)
+          openLegacyCamera()
+        }
+    } catch (e: Exception) {
+      Log.w("ScannerScreen", "Document scanner setup failed", e)
+      openLegacyCamera()
+    } catch (e: LinkageError) {
+      // The scanner classes could not be loaded at all.
+      Log.w("ScannerScreen", "Document scanner classes are unavailable", e)
+      openLegacyCamera()
+    }
   }
 
   if (showCreateDialog) {
@@ -288,6 +341,11 @@ fun ScannerScreen(
       },
       onUseSystemCamera = { launchSystemCameraFallback() },
       onDismiss = { showCameraXScanner = false },
+      onUnavailable = {
+        // The live preview cannot start: close the dialog and use the system camera instead.
+        showCameraXScanner = false
+        launchSystemCameraFallback()
+      },
     )
   }
 

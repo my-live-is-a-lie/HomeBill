@@ -31,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachMoney
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
@@ -96,6 +97,7 @@ import com.example.R
 import com.example.data.AssistantWebSearchStore
 import com.example.data.CurrencyPreferenceStore
 import com.example.data.remote.UserGeminiKeyStore
+import com.example.util.CrashReporter
 import kotlinx.coroutines.launch
 
 /**
@@ -110,13 +112,17 @@ fun SettingsScreen(
   onImportChats: (String) -> ChatImportResult = { ChatImportResult(0, 0) },
 ) {
   var showAiKeys by remember { mutableStateOf(false) }
+  var showCrashReports by remember { mutableStateOf(false) }
   // The screen has no top app bar, so keep its content below the status bar.
   Box(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
     if (showAiKeys) {
       GeminiKeysScreen(onBack = { showAiKeys = false })
+    } else if (showCrashReports) {
+      CrashReportsScreen(initialReportId = null, onClose = { showCrashReports = false })
     } else {
       SettingsHubScreen(
         onOpenAiKeys = { showAiKeys = true },
+        onOpenCrashReports = { showCrashReports = true },
         onExportChats = onExportChats,
         onImportChats = onImportChats,
       )
@@ -127,6 +133,7 @@ fun SettingsScreen(
 @Composable
 private fun SettingsHubScreen(
   onOpenAiKeys: () -> Unit,
+  onOpenCrashReports: () -> Unit,
   onExportChats: () -> String,
   onImportChats: (String) -> ChatImportResult,
 ) {
@@ -299,6 +306,36 @@ private fun SettingsHubScreen(
             Spacer(modifier = Modifier.size(6.dp))
             Text(text = "استيراد")
           }
+        }
+      }
+    }
+    // Reports of earlier crashes, kept on this device only. Read again whenever the hub is shown,
+    // so the count is right after returning from the reports screen.
+    val crashReportCount = remember { CrashReporter.listReports(context).size }
+    Card(
+      onClick = onOpenCrashReports,
+      modifier = Modifier.fillMaxWidth().testTag("crash_reports_entry"),
+    ) {
+      Row(
+        modifier = Modifier.fillMaxWidth().padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+      ) {
+        Icon(imageVector = Icons.Default.BugReport, contentDescription = null)
+        Column(modifier = Modifier.weight(1f)) {
+          Text(
+            text = stringResource(R.string.crash_reports_title),
+            style = MaterialTheme.typography.titleMedium,
+          )
+          Text(
+            text =
+              if (crashReportCount == 0) {
+                stringResource(R.string.crash_reports_settings_summary_none)
+              } else {
+                stringResource(R.string.crash_reports_settings_summary, crashReportCount)
+              },
+            style = MaterialTheme.typography.bodyMedium,
+          )
         }
       }
     }

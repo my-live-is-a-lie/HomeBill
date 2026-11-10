@@ -16,6 +16,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +51,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -108,6 +110,7 @@ import com.example.ui.components.CameraXBillCaptureDialog
 import com.example.ui.components.CategoryFormDialog
 import com.example.ui.components.ExpressiveButton
 import com.example.ui.components.ExpressiveFab
+import com.example.ui.components.FullscreenImageViewer
 import com.example.ui.components.UtilityIconAvatar
 import com.example.ui.components.VoiceBillEntrySheet
 import com.example.ui.theme.LocalUtilityPalette
@@ -153,6 +156,7 @@ fun ScannerScreen(
   onReclassifyDraft: () -> Unit = {},
   onSaveScannedBill: (ScannedBillDraft, String?) -> Unit,
   onResetScan: () -> Unit,
+  onCancelScan: () -> Unit = {},
   onCreateCategory: (String, UtilityType, String, Double, Boolean) -> Unit,
   // When set, the create-section dialog offers the template choice and reports it here.
   onCreateCategoryWithTemplate:
@@ -662,6 +666,18 @@ fun ScannerScreen(
                     style = MaterialTheme.typography.titleMedium,
                     textAlign = TextAlign.Center,
                   )
+                  Spacer(modifier = Modifier.height(18.dp))
+                  OutlinedButton(
+                    onClick = onCancelScan,
+                    modifier =
+                      Modifier.fillMaxWidth()
+                        .height(48.dp)
+                        .testTag("cancel_invoice_scan_button"),
+                  ) {
+                    Icon(Icons.Default.Stop, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("إيقاف القراءة")
+                  }
                 }
               }
             }
@@ -688,32 +704,35 @@ fun ScannerScreen(
         }
       }
 
-      // "Add bill": a small rectangular button with a plus, floating at the bottom corner of the
-      // screen. BottomStart is the right corner in this right-to-left layout.
-      ExpressiveFab(
-        onClick = { showCreateDialog = true },
-        modifier =
-          Modifier.align(Alignment.BottomStart)
-            .padding(16.dp)
-            .size(width = 72.dp, height = 56.dp)
-            .testTag("add_bill_from_scanner_button"),
-      ) {
-        Icon(
-          imageVector = Icons.Default.Add,
-          contentDescription = stringResource(R.string.add_category_button),
+      // Keep the floating creation actions out of the way while extraction or saving is active.
+      if (scanState !is ScanUiState.Scanning && !isSaving) {
+        // "Add bill": a small rectangular button with a plus, floating at the bottom corner of the
+        // screen. BottomStart is the right corner in this right-to-left layout.
+        ExpressiveFab(
+          onClick = { showCreateDialog = true },
+          modifier =
+            Modifier.align(Alignment.BottomStart)
+              .padding(16.dp)
+              .size(width = 72.dp, height = 56.dp)
+              .testTag("add_bill_from_scanner_button"),
+        ) {
+          Icon(
+            imageVector = Icons.Default.Add,
+            contentDescription = stringResource(R.string.add_category_button),
+          )
+        }
+        // "Add bill by voice": at the bottom end (the left corner in this right-to-left
+        // layout), opposite the "+" button at BottomStart, so the two stay far apart.
+        ExtendedFloatingActionButton(
+          onClick = { showVoiceSheet = true },
+          icon = { Icon(imageVector = Icons.Default.Mic, contentDescription = null) },
+          text = { Text("إضافة بالصوت") },
+          modifier =
+            Modifier.align(Alignment.BottomEnd)
+              .padding(16.dp)
+              .testTag("scanner_voice_bill_button"),
         )
       }
-      // "Add bill by voice": at the bottom end (the left corner in this right-to-left
-      // layout), opposite the "+" button at BottomStart, so the two stay far apart.
-      ExtendedFloatingActionButton(
-        onClick = { showVoiceSheet = true },
-        icon = { Icon(imageVector = Icons.Default.Mic, contentDescription = null) },
-        text = { Text("إضافة بالصوت") },
-        modifier =
-          Modifier.align(Alignment.BottomEnd)
-            .padding(16.dp)
-            .testTag("scanner_voice_bill_button"),
-      )
     }
   }
 }
@@ -749,6 +768,11 @@ private fun ExtractedSheetReviewCard(
 
   var chosenCategoryId by remember(autoMatchedCategory) { mutableStateOf(autoMatchedCategory?.id) }
   var showDatePicker by remember { mutableStateOf(false) }
+  var showFullscreenImage by remember(imageUri) { mutableStateOf(false) }
+
+  if (showFullscreenImage && imageUri != Uri.EMPTY) {
+    FullscreenImageViewer(imageUri = imageUri, onDismiss = { showFullscreenImage = false })
+  }
 
   val targetCategory = categories.firstOrNull { it.id == chosenCategoryId }
   val existingCatBills =
@@ -825,7 +849,9 @@ private fun ExtractedSheetReviewCard(
             modifier =
               Modifier.fillMaxWidth()
                 .height(160.dp)
-                .clip(MaterialTheme.shapes.large),
+                .clip(MaterialTheme.shapes.large)
+                .clickable { showFullscreenImage = true }
+                .testTag("scanned_invoice_image_preview"),
           )
           Spacer(modifier = Modifier.height(6.dp))
           Text(

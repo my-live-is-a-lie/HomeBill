@@ -60,6 +60,8 @@
     <string name="export_category_sheet">تصدير كشف الجدول</string>
     <string name="delete_category_confirm_title">حذف قسم الفاتورة؟</string>
     <string name="delete_category_confirm_body">سيتم حذف هذا القسم وجميع الفواتير الشهرية المسجلة بداخله نهائياً.</string>
+    <string name="delete_bill_confirm_title">حذف الفاتورة؟</string>
+    <string name="delete_bill_confirm_body">سيتم حذف هذه الفاتورة نهائياً، ولا يمكن التراجع عن هذا الإجراء.</string>
     <string name="category_avg_monthly">المتوسط الشهري</string>
     <string name="category_latest_consumption">آخر استهلاك</string>
     <string name="category_threshold_badge">تنبيه عند +%1$d%%</string>

@@ -23,3 +23,13 @@
 # Keep the data model classes (Room entities and values passed to/from JSON) as they are.
 -keep class com.example.data.model.** { *; }
 -keepclassmembers class com.example.data.model.** { *; }
+
+# ML Kit / Google Play services. ML Kit builds its component graph at runtime from class names
+# listed in the manifest (ComponentDiscoveryService meta-data) and via reflection. If R8 renames
+# or removes those classes, GmsDocumentScanning.getClient fails inside the library with a
+# NullPointerException in release builds only.
+-keep class com.google.mlkit.** { *; }
+-keep class com.google.android.gms.internal.mlkit_** { *; }
+-keep class com.google.android.gms.common.moduleinstall.** { *; }
+-keep class * implements com.google.firebase.components.ComponentRegistrar { *; }
+-dontwarn com.google.mlkit.**

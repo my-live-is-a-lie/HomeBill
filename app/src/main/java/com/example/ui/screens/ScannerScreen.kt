@@ -626,26 +626,6 @@ fun ScannerScreen(
                     )
                   }
 
-                  Spacer(modifier = Modifier.height(10.dp))
-
-                  // Use the same ML Kit document-scanner flow as camera capture.
-                  // Gallery import is enabled in the scanner options, so selected photos get
-                  // the same crop, rotation, filters and confirmation stage before OCR starts.
-                  ExpressiveButton(
-                    onClick = { launchDocumentScanner() },
-                    tonal = true,
-                    modifier =
-                      Modifier.fillMaxWidth()
-                        .height(52.dp)
-                        .testTag("pick_gallery_button"),
-                  ) {
-                    Icon(Icons.Default.PhotoLibrary, contentDescription = null)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                      text = stringResource(R.string.pick_photo_gallery),
-                      style = MaterialTheme.typography.titleMedium,
-                    )
-                  }
                 }
               }
             }

@@ -33,6 +33,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -194,6 +196,7 @@ class HomeBillsViewModel(
       )
 
   private val _scanState = MutableStateFlow<ScanUiState>(ScanUiState.Idle)
+  private var scanJob: Job? = null
   val scanState: StateFlow<ScanUiState> = _scanState.asStateFlow()
 
   private val _isSaving = MutableStateFlow(false)
@@ -222,8 +225,14 @@ class HomeBillsViewModel(
     _snackbarMessage.value = null
   }
 
-  fun resetScanState() {
+  fun cancelScan() {
+    scanJob?.cancel()
+    scanJob = null
     _scanState.value = ScanUiState.Idle
+  }
+
+  fun resetScanState() {
+    cancelScan()
   }
 
   fun selectDashboardMonth(yearMonth: String?) {
@@ -494,14 +503,17 @@ class HomeBillsViewModel(
   }
 
   fun scanBillImage(context: Context, imageUri: Uri, preselectedCategoryId: String? = null) {
-    viewModelScope.launch {
+    scanJob?.cancel()
+    scanJob = viewModelScope.launch {
       _scanState.value = ScanUiState.Scanning(imageUri)
-      scanner
-        .scanBillImage(
+      val result =
+        scanner.scanBillImage(
           context.applicationContext,
           imageUri,
           CurrencyPreferenceStore.getCurrency(),
         )
+      if (!isActive) return@launch
+      result
         .onSuccess { draft ->
           _scanState.value =
             ScanUiState.Extracted(
@@ -525,10 +537,12 @@ class HomeBillsViewModel(
     previewUri: Uri = Uri.EMPTY,
     preselectedCategoryId: String? = null,
   ) {
-    viewModelScope.launch {
+    scanJob?.cancel()
+    scanJob = viewModelScope.launch {
       _scanState.value = ScanUiState.Scanning(previewUri)
-      scanner
-        .scanBillBitmap(bitmap, CurrencyPreferenceStore.getCurrency())
+      val result = scanner.scanBillBitmap(bitmap, CurrencyPreferenceStore.getCurrency())
+      if (!isActive) return@launch
+      result
         .onSuccess { draft ->
           _scanState.value =
             ScanUiState.Extracted(
@@ -552,18 +566,21 @@ class HomeBillsViewModel(
    * the same review form as a scanned bill; nothing is saved until the user confirms there.
    */
   fun scanBillText(spokenText: String) {
-    viewModelScope.launch {
+    scanJob?.cancel()
+    scanJob = viewModelScope.launch {
       _scanState.value = ScanUiState.Scanning(Uri.EMPTY)
       val categoryNames = (categoriesState.value as? UiState.Success)?.data.orEmpty().map { it.name }
       val todayIso = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
       val currency = CurrencyPreferenceStore.getCurrency()
-      textScanner
-        .scanBillText(
+      val result =
+        textScanner.scanBillText(
           spokenText = spokenText,
           todayIso = todayIso,
           defaultCurrency = currency,
           categoryNames = categoryNames,
         )
+      if (!isActive) return@launch
+      result
         .onSuccess { draft ->
           _scanState.value =
             ScanUiState.Extracted(

@@ -119,6 +119,9 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.google.accompanist.permissions.shouldShowRationale
+import com.google.android.gms.common.moduleinstall.ModuleInstall
+import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
+import com.google.mlkit.vision.documentscanner.GmsDocumentScanner
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanningResult
@@ -169,6 +172,8 @@ fun ScannerScreen(
   // The reason the ML Kit scanner failed to open, shown in a dialog instead of silently
   // falling back to the CameraX dialog. Null when the scanner opened (or was not tried).
   var scannerFailure by remember { mutableStateOf<ScannerFailure?>(null) }
+  // True while the scanner module is being downloaded after Play services reported it missing.
+  var scannerModuleDownloading by remember { mutableStateOf(false) }
 
   val cameraPermissionState =
     rememberPermissionState(permission = Manifest.permission.CAMERA) { isGranted ->
@@ -286,8 +291,49 @@ fun ScannerScreen(
       }
     }
 
-  // First step of the camera chain: ML Kit document scanner. Every failure is recorded and
-  // its reason shown, instead of silently falling back to the CameraX dialog.
+  // Launches the scanner once its module is confirmed to be installed. Every failure is
+  // recorded and its reason shown, instead of silently falling back to the CameraX dialog.
+  fun startScanner(scanner: GmsDocumentScanner, activity: Activity) {
+    try {
+      scanner
+        .getStartScanIntent(activity)
+        .addOnSuccessListener { intentSender ->
+          try {
+            documentScannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
+          } catch (e: Exception) {
+            reportScannerFailure(e)
+          }
+        }
+        .addOnFailureListener { e ->
+          reportScannerFailure(e)
+        }
+    } catch (e: Exception) {
+      reportScannerFailure(e)
+    } catch (e: LinkageError) {
+      // The scanner classes could not be loaded at all.
+      reportScannerFailure(e)
+    }
+  }
+
+  // Asks Play services to download the scanner module, and tells the user to retry once it
+  // is ready. The missing module is also recorded in the reports log.
+  fun requestScannerModule(scanner: GmsDocumentScanner) {
+    runCatching {
+      CrashReporter.recordNonFatal(
+        context,
+        "Document scanner module not installed",
+        IllegalStateException("Document scanner module is not installed"),
+      )
+    }
+    ModuleInstall.getClient(context)
+      .installModules(ModuleInstallRequest.newBuilder().addApi(scanner).build())
+      .addOnSuccessListener { scannerModuleDownloading = true }
+      .addOnFailureListener { e -> reportScannerFailure(e) }
+  }
+
+  // First step of the camera chain: ML Kit document scanner. The scanner is an on-demand
+  // Play services module (GmsDocumentScanner is an OptionalModuleApi), so confirm it is
+  // installed before launching; launching while it is missing fails inside Play services.
   fun launchDocumentScanner() {
     try {
       val activity = context.findActivity()
@@ -306,17 +352,20 @@ fun ScannerScreen(
           .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
           .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
           .build()
-      GmsDocumentScanning.getClient(options)
-        .getStartScanIntent(activity)
-        .addOnSuccessListener { intentSender ->
-          try {
-            documentScannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
-          } catch (e: Exception) {
-            reportScannerFailure(e)
+      val scanner = GmsDocumentScanning.getClient(options)
+      ModuleInstall.getClient(context)
+        .areModulesAvailable(scanner)
+        .addOnSuccessListener { response ->
+          if (response.areModulesAvailable()) {
+            startScanner(scanner, activity)
+          } else {
+            requestScannerModule(scanner)
           }
         }
-        .addOnFailureListener { e ->
-          reportScannerFailure(e)
+        .addOnFailureListener {
+          // The availability check itself failed: try the scanner directly, and let the
+          // diagnostic dialog show the real reason if that fails too.
+          startScanner(scanner, activity)
         }
     } catch (e: Exception) {
       reportScannerFailure(e)
@@ -379,6 +428,12 @@ fun ScannerScreen(
         scannerFailure = null
         openLegacyCamera()
       },
+    )
+  }
+
+  if (scannerModuleDownloading) {
+    ScannerModuleDownloadingDialog(
+      onDismiss = { scannerModuleDownloading = false },
     )
   }
 
@@ -1444,6 +1499,23 @@ private fun ScannerFailureDialog(
         modifier = Modifier.testTag("scanner_failure_use_fallback"),
       ) {
         Text(stringResource(R.string.scanner_failure_use_fallback))
+      }
+    },
+  )
+}
+
+@Composable
+private fun ScannerModuleDownloadingDialog(onDismiss: () -> Unit) {
+  AlertDialog(
+    onDismissRequest = onDismiss,
+    title = { Text(stringResource(R.string.scanner_module_downloading_title)) },
+    text = { Text(stringResource(R.string.scanner_module_downloading_message)) },
+    confirmButton = {
+      TextButton(
+        onClick = onDismiss,
+        modifier = Modifier.testTag("scanner_module_downloading_ok"),
+      ) {
+        Text(stringResource(R.string.scanner_module_downloading_ok))
       }
     },
   )

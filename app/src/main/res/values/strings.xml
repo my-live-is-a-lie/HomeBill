@@ -157,6 +157,9 @@
     <string name="scanner_failure_message">تعذّر تشغيل ماسح المستندات. جرّب مرة أخرى، أو استخدم الكاميرا البديلة. تم حفظ سبب الفشل في سجل تقارير الأعطال.</string>
     <string name="scanner_failure_retry">إعادة المحاولة</string>
     <string name="scanner_failure_use_fallback">استخدام الكاميرا البديلة</string>
+    <string name="scanner_module_downloading_title">جارٍ تنزيل وحدة الماسح</string>
+    <string name="scanner_module_downloading_message">وحدة ماسح المستندات غير مثبّتة بعد، ويتم تنزيلها الآن. جرّب مرة أخرى بعد لحظات.</string>
+    <string name="scanner_module_downloading_ok">حسنًا</string>
     <string name="crash_reports_title">تقارير الأعطال</string>
     <string name="crash_reports_back">رجوع</string>
     <string name="crash_report_after_crash_title">توقف التطبيق في المرة السابقة</string>

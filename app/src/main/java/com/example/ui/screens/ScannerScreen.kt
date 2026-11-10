@@ -14,7 +14,6 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
-import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -236,13 +235,6 @@ fun ScannerScreen(
       showCameraFailure()
     }
   }
-
-  val photoPickerLauncher =
-    rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-      if (uri != null) {
-        onImageSelected(uri)
-      }
-    }
 
   // Second step of the camera chain: the CameraX dialog (needs the camera permission). If even
   // this step cannot start, the system camera is tried next.

@@ -105,6 +105,7 @@ fun DashboardScreen(
   onSearchScopeChange: (BillSearchScope) -> Unit,
   onClearSearch: () -> Unit,
   onSaveBill: (BillRecord, Double, List<BillRecord>) -> Unit,
+  onDeleteBill: (String) -> Unit = {},
   onOpenCategory: (String) -> Unit,
   onOpenScanner: () -> Unit,
   onOpenAssistant: () -> Unit,
@@ -184,6 +185,7 @@ fun DashboardScreen(
         editingSearchBill = sheetBill
       },
       onDismiss = { activeSheetBill = null },
+      onDeleteBill = onDeleteBill,
     )
   }
 

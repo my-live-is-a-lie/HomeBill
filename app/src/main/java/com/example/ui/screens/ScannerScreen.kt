@@ -173,7 +173,7 @@ fun ScannerScreen(
   var scannerFailure by remember { mutableStateOf<ScannerFailure?>(null) }
   // True while the scanner module is being downloaded after Play services reported it missing.
   var scannerModuleDownloading by remember { mutableStateOf(false) }
-  var scannerPreparing by remember { mutableStateOf(false) }
+  var scannerModuleReady by rememberSaveable { mutableStateOf(false) }
   var scannerModuleProgress by remember { mutableStateOf<Float?>(null) }
 
   val takePictureLauncher =
@@ -191,7 +191,6 @@ fun ScannerScreen(
   // Records a scanner failure in the local reports (Settings > crash reports) and shows its
   // reason on screen, with an explicit option to use the external system camera.
   fun reportScannerFailure(throwable: Throwable) {
-    scannerPreparing = false
     scannerModuleDownloading = false
     scannerModuleProgress = null
     val detail = "${throwable.javaClass.simpleName}: ${throwable.message ?: "unknown reason"}"
@@ -291,8 +290,10 @@ fun ScannerScreen(
             moduleInstallClient.unregisterListener(this)
             scannerModuleDownloading = false
             scannerModuleProgress = null
-            scannerPreparing = true
-            startScanner(scanner, activity)
+            scannerModuleReady = true
+            scannerModuleReady = true
+            scannerModuleReady = true
+          startScanner(scanner, activity)
           }
           STATE_FAILED -> {
             moduleInstallClient.unregisterListener(this)
@@ -327,7 +328,7 @@ fun ScannerScreen(
           moduleInstallClient.unregisterListener(listener)
           scannerModuleDownloading = false
           scannerModuleProgress = null
-          scannerPreparing = true
+          scannerModuleReady = true
           startScanner(scanner, activity)
         }
       }
@@ -342,7 +343,22 @@ fun ScannerScreen(
   // installed before launching; launching while it is missing fails inside Play services.
   fun launchDocumentScanner() {
     try {
-      scannerPreparing = true
+      if (scannerModuleReady) {
+        val activity = context.findActivity()
+        if (activity != null) {
+          startScanner(GmsDocumentScanning.getClient(
+            GmsDocumentScannerOptions.Builder()
+              .setGalleryImportAllowed(true)
+              .setPageLimit(1)
+              .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_JPEG)
+              .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
+              .build()
+          ), activity)
+        } else {
+          reportScannerFailure(IllegalStateException("No activity available to open the document scanner"))
+        }
+        return
+      }
       val activity = context.findActivity()
       if (activity == null) {
         reportScannerFailure(
@@ -424,7 +440,7 @@ fun ScannerScreen(
     )
   }
 
-  if (scannerPreparing || scannerModuleDownloading) {
+  if (scannerModuleDownloading) {
     ScannerModuleDownloadingDialog(
       isDownloading = scannerModuleDownloading,
       progress = scannerModuleProgress,

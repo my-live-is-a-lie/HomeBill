@@ -94,11 +94,6 @@
     <string name="scanner_subtitle">التقط صورة واضحة للفاتورة أو اخترها من المعرض ليقوم الذكاء الاصطناعي بقراءة النص وتحديد الفئة والتاريخ والقيم وبناء جدول كامل بالتفاصيل.</string>
     <string name="take_photo_camera">تصوير بالكاميرا</string>
     <string name="pick_photo_gallery">اختيار صورة فاتورة</string>
-    <string name="camera_permission_denied">يلزم منح إذن الكاميرا لالتقاط صورة الفاتورة، أو يمكنك تفعيل الإذن من إعدادات التطبيق أو اختيار صورة من المعرض مباشرة.</string>
-    <string name="camera_permission_rationale_title">مطلوب إذن الوصول إلى الكاميرا</string>
-    <string name="camera_permission_rationale_body">يحتاج التطبيق إلى صلاحية الكاميرا لتصوير الفاتورة المنزلية واستخراج النص والتاريخ والقيم تلقائياً في جدول التفاصيل.</string>
-    <string name="camera_permission_grant_action">منح صلاحية الكاميرا</string>
-    <string name="camera_permission_open_settings">تفعيل الكاميرا من إعدادات التطبيق</string>
     <string name="scanning_in_progress">جارٍ قراءة نص الفاتورة واستخراج جدول التفاصيل...</string>
     <string name="scan_result_sheet_title">جدول تفاصيل الفاتورة المستخرج</string>
     <string name="detected_category_label">التصنيف المكتشف تلقائياً:</string>
@@ -150,16 +145,11 @@
     <string name="share_sheet_chooser_title">مشاركة ملف جدول الفاتورة (CSV)</string>
 
     <!-- CameraX Bill Scanner -->
-    <string name="camerax_guide_hint">ضع الفاتورة داخل الإطار بوضوح لقراءة النص والأرقام بدقة</string>
-    <string name="camerax_close_desc">إغلاق الماسح الضوئي</string>
-    <string name="camerax_flash_desc">تبديل الإضاءة (الفلاش)</string>
-    <string name="camerax_shutter_desc">التقاط صورة الفاتورة</string>
-    <string name="camerax_system_camera_fallback">استخدام تطبيق الكاميرا الخارجي</string>
     <string name="camera_open_failed">تعذر فتح الكاميرا على هذا الجهاز. يمكنك اختيار صورة الفاتورة من المعرض بدلاً من ذلك.</string>
     <string name="scanner_failure_title">تعذّر فتح الماسح</string>
-    <string name="scanner_failure_message">تعذّر تشغيل ماسح المستندات. جرّب مرة أخرى، أو استخدم الكاميرا البديلة. تم حفظ سبب الفشل في سجل تقارير الأعطال.</string>
+    <string name="scanner_failure_message">تعذّر تشغيل ماسح المستندات. جرّب مرة أخرى، أو استخدم كاميرا الجهاز. تم حفظ سبب الفشل في سجل تقارير الأعطال.</string>
     <string name="scanner_failure_retry">إعادة المحاولة</string>
-    <string name="scanner_failure_use_fallback">استخدام الكاميرا البديلة</string>
+    <string name="scanner_failure_use_fallback">استخدام كاميرا الجهاز</string>
     <string name="scanner_module_downloading_title">جارٍ تنزيل وحدة الماسح</string>
     <string name="scanner_module_downloading_message">وحدة ماسح المستندات غير مثبّتة بعد، ويتم تنزيلها الآن. جرّب مرة أخرى بعد لحظات.</string>
     <string name="scanner_module_downloading_ok">حسنًا</string>
@@ -177,8 +167,6 @@
     <string name="crash_reports_delete_all">حذف كل التقارير</string>
     <string name="crash_reports_settings_summary_none">لا توجد تقارير أعطال محفوظة. تُحفظ التقارير على جهازك فقط.</string>
     <string name="crash_reports_settings_summary">%1$d تقرير محفوظ على جهازك فقط — اعرضها أو احذفها.</string>
-    <string name="camerax_unavailable_error">تعذر تشغيل معاينة الكاميرا المباشرة على هذا الجهاز.</string>
-
     <!-- Gemini Bill Assistant Chatbot -->
     <string name="hero_ask_assistant_cta">محادثة المساعد الذكي وتحليل الفواتير</string>
     <string name="assistant_title">المساعد الذكي</string>

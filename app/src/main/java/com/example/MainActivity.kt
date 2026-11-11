@@ -139,6 +139,7 @@ fun AppShell(currentUserId: String) {
   val preferredCurrency by CurrencyPreferenceStore.currencyFlow.collectAsStateWithLifecycle()
   val scanState by vm.scanState.collectAsStateWithLifecycle()
   val isSaving by vm.isSaving.collectAsStateWithLifecycle()
+  val isSavingScannedBill by vm.isSavingScannedBill.collectAsStateWithLifecycle()
   val isReclassifying by vm.isReclassifying.collectAsStateWithLifecycle()
   val snackbarMessage by vm.snackbarMessage.collectAsStateWithLifecycle()
 
@@ -533,7 +534,7 @@ fun AppShell(currentUserId: String) {
                 categories = categories,
                 allBills = allBills,
                 preselectedCategoryId = route.preselectedCategoryId,
-                isSaving = isSaving,
+                isSavingScannedBill = isSavingScannedBill,
                 isReclassifying = isReclassifying,
                 onImageSelected = { uri ->
                   vm.scanBillImage(context, uri, route.preselectedCategoryId)

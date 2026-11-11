@@ -149,7 +149,7 @@ fun ScannerScreen(
   categories: List<BillCategory>,
   allBills: List<BillRecord>,
   preselectedCategoryId: String?,
-  isSaving: Boolean,
+  isSavingScannedBill: Boolean,
   isReclassifying: Boolean = false,
   onImageSelected: (Uri) -> Unit,
   onUpdateDraft: (ScannedBillDraft) -> Unit,
@@ -692,7 +692,7 @@ fun ScannerScreen(
                 categories = categories,
                 allBills = allBills,
                 initialCategoryId = scanState.preselectedCategoryId ?: preselectedCategoryId,
-                isSaving = isSaving,
+                isSaving = isSavingScannedBill,
                 isReclassifying = isReclassifying,
                 onUpdateDraft = onUpdateDraft,
                 onReclassifyDraft = onReclassifyDraft,
@@ -705,7 +705,7 @@ fun ScannerScreen(
       }
 
       // Keep the floating creation actions out of the way while extraction or saving is active.
-      if (scanState !is ScanUiState.Scanning && !isSaving) {
+      if (scanState !is ScanUiState.Scanning && !isSavingScannedBill) {
         // "Add bill": a small rectangular button with a plus, floating at the bottom corner of the
         // screen. BottomStart is the right corner in this right-to-left layout.
         ExpressiveFab(

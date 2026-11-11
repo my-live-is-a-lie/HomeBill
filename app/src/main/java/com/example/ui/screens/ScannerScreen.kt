@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Stop
@@ -78,6 +79,7 @@ import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -85,6 +87,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -754,6 +757,8 @@ private fun ExtractedSheetReviewCard(
   onRescan: () -> Unit,
 ) {
   val palette = LocalUtilityPalette.current
+  // Keep removed rows in the draft until save, so they can be restored without losing their values.
+  val deletedSheetRowIndices = remember(imageUri, draft.structuredJsonPreview) { mutableStateListOf<Int>() }
   val autoMatchedCategory =
     remember(categories, draft.detectedUtilityType, draft.suggestedCategoryName, initialCategoryId) {
       if (!initialCategoryId.isNullOrBlank()) {
@@ -1359,11 +1364,12 @@ private fun ExtractedSheetReviewCard(
           }
 
           draft.sheetRows.forEachIndexed { idx, row ->
+            val isRowDeleted = idx in deletedSheetRowIndices
             HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f))
             Row(
               verticalAlignment = Alignment.CenterVertically,
               horizontalArrangement = Arrangement.spacedBy(6.dp),
-              modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+              modifier = Modifier.fillMaxWidth().alpha(if (isRowDeleted) 0.42f else 1f).padding(horizontal = 8.dp, vertical = 6.dp),
             ) {
               OutlinedTextField(
                 value = row.label,
@@ -1373,6 +1379,7 @@ private fun ExtractedSheetReviewCard(
                   onUpdateDraft(draft.copy(sheetRows = updatedList))
                 },
                 singleLine = true,
+                enabled = !isRowDeleted,
                 modifier = Modifier.weight(1.2f),
               )
               OutlinedTextField(
@@ -1383,18 +1390,24 @@ private fun ExtractedSheetReviewCard(
                   onUpdateDraft(draft.copy(sheetRows = updatedList))
                 },
                 singleLine = true,
+                enabled = !isRowDeleted,
                 modifier = Modifier.weight(1f),
               )
               IconButton(
                 onClick = {
-                  val updatedList = draft.sheetRows.toMutableList().apply { removeAt(idx) }
-                  onUpdateDraft(draft.copy(sheetRows = updatedList))
+                  if (isRowDeleted) {
+                    deletedSheetRowIndices.remove(idx)
+                  } else {
+                    deletedSheetRowIndices.add(idx)
+                  }
                 },
-                modifier = Modifier.size(36.dp),
+                modifier = Modifier.size(36.dp).testTag("toggle_scanned_sheet_row_$idx"),
               ) {
                 Icon(
-                  Icons.Default.DeleteOutline,
-                  contentDescription = stringResource(R.string.action_delete),
+                  imageVector = if (isRowDeleted) Icons.Default.Restore else Icons.Default.DeleteOutline,
+                  contentDescription = stringResource(
+                    if (isRowDeleted) R.string.action_restore else R.string.action_delete
+                  ),
                   modifier = Modifier.size(18.dp),
                 )
               }
@@ -1422,7 +1435,12 @@ private fun ExtractedSheetReviewCard(
         }
 
         Button(
-          onClick = { onConfirmSave(draft, chosenCategoryId) },
+          onClick = {
+            val rowsToSave = draft.sheetRows.filterIndexed { index, _ ->
+              index !in deletedSheetRowIndices
+            }
+            onConfirmSave(draft.copy(sheetRows = rowsToSave), chosenCategoryId)
+          },
           enabled = !isSaving,
           modifier =
             Modifier.fillMaxWidth()

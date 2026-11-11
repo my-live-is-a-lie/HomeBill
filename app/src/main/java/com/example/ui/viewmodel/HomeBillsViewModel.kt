@@ -728,8 +728,6 @@ class HomeBillsViewModel(
                 }
               }
               _isSaving.value = false
-          _isSavingScannedBill.value = false
-              _isSavingScannedBill.value = false
               _isSavingScannedBill.value = false
               _scanState.value = ScanUiState.Idle
               if (comparison.hasSpike) {
@@ -745,11 +743,13 @@ class HomeBillsViewModel(
             }
             .onFailure { err ->
               _isSaving.value = false
+              _isSavingScannedBill.value = false
               _snackbarMessage.value = err.localizedMessage ?: "تعذر حفظ الفاتورة المستخرجة"
             }
         }
         .onFailure { err ->
           _isSaving.value = false
+          _isSavingScannedBill.value = false
           _snackbarMessage.value = err.localizedMessage ?: "تعذر تجهيز قسم الفاتورة"
         }
     }

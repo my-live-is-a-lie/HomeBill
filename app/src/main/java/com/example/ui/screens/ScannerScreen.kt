@@ -1342,6 +1342,7 @@ private fun ExtractedSheetReviewCard(
         Column(
           modifier =
             Modifier.fillMaxWidth()
+              .clip(MaterialTheme.shapes.medium)
               .border(1.dp, MaterialTheme.colorScheme.outline, MaterialTheme.shapes.medium)
         ) {
           Row(

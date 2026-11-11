@@ -116,7 +116,12 @@ import com.example.ui.theme.LocalUtilityPalette
 import com.example.ui.viewmodel.ScanUiState
 import com.example.util.CrashReporter
 import com.example.util.DateAndFormatUtils
+import com.google.android.gms.common.moduleinstall.InstallStatusListener
 import com.google.android.gms.common.moduleinstall.ModuleInstall
+import com.google.android.gms.common.moduleinstall.ModuleInstallStatusUpdate
+import com.google.android.gms.common.moduleinstall.ModuleInstallStatusUpdate.InstallState.STATE_CANCELED
+import com.google.android.gms.common.moduleinstall.ModuleInstallStatusUpdate.InstallState.STATE_COMPLETED
+import com.google.android.gms.common.moduleinstall.ModuleInstallStatusUpdate.InstallState.STATE_FAILED
 import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanner
 import com.google.mlkit.vision.documentscanner.GmsDocumentScannerOptions
@@ -168,6 +173,8 @@ fun ScannerScreen(
   var scannerFailure by remember { mutableStateOf<ScannerFailure?>(null) }
   // True while the scanner module is being downloaded after Play services reported it missing.
   var scannerModuleDownloading by remember { mutableStateOf(false) }
+  var scannerPreparing by remember { mutableStateOf(false) }
+  var scannerModuleProgress by remember { mutableStateOf<Float?>(null) }
 
   val takePictureLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
@@ -184,6 +191,9 @@ fun ScannerScreen(
   // Records a scanner failure in the local reports (Settings > crash reports) and shows its
   // reason on screen, with an explicit option to use the external system camera.
   fun reportScannerFailure(throwable: Throwable) {
+    scannerPreparing = false
+    scannerModuleDownloading = false
+    scannerModuleProgress = null
     val detail = "${throwable.javaClass.simpleName}: ${throwable.message ?: "unknown reason"}"
     Log.w("ScannerScreen", "Document scanner failed to open: $detail", throwable)
     runCatching {
@@ -243,6 +253,7 @@ fun ScannerScreen(
       scanner
         .getStartScanIntent(activity)
         .addOnSuccessListener { intentSender ->
+          scannerPreparing = false
           try {
             documentScannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
           } catch (e: Exception) {
@@ -262,7 +273,40 @@ fun ScannerScreen(
 
   // Asks Play services to download the scanner module, and tells the user to retry once it
   // is ready. The missing module is also recorded in the reports log.
-  fun requestScannerModule(scanner: GmsDocumentScanner) {
+  fun requestScannerModule(scanner: GmsDocumentScanner, activity: Activity) {
+    scannerModuleDownloading = true
+    scannerModuleProgress = null
+    val moduleInstallClient = ModuleInstall.getClient(context)
+    val listener = object : InstallStatusListener {
+      override fun onInstallStatusUpdated(update: ModuleInstallStatusUpdate) {
+        update.progressInfo?.let { info ->
+          if (info.totalBytesToDownload > 0L) {
+            scannerModuleProgress =
+              (info.bytesDownloaded.toFloat() / info.totalBytesToDownload.toFloat())
+                .coerceIn(0f, 1f)
+          }
+        }
+        when (update.installState) {
+          STATE_COMPLETED -> {
+            moduleInstallClient.unregisterListener(this)
+            scannerModuleDownloading = false
+            scannerModuleProgress = null
+            startScanner(scanner, activity)
+          }
+          STATE_FAILED -> {
+            moduleInstallClient.unregisterListener(this)
+            reportScannerFailure(
+              IllegalStateException("Document scanner module installation failed (code ${update.errorCode})")
+            )
+          }
+          STATE_CANCELED -> {
+            moduleInstallClient.unregisterListener(this)
+            scannerModuleDownloading = false
+            scannerModuleProgress = null
+          }
+        }
+      }
+    }
     runCatching {
       CrashReporter.recordNonFatal(
         context,
@@ -270,10 +314,25 @@ fun ScannerScreen(
         IllegalStateException("Document scanner module is not installed"),
       )
     }
-    ModuleInstall.getClient(context)
-      .installModules(ModuleInstallRequest.newBuilder().addApi(scanner).build())
-      .addOnSuccessListener { scannerModuleDownloading = true }
-      .addOnFailureListener { e -> reportScannerFailure(e) }
+    moduleInstallClient
+      .installModules(
+        ModuleInstallRequest.newBuilder()
+          .addApi(scanner)
+          .setListener(listener)
+          .build()
+      )
+      .addOnSuccessListener { response ->
+        if (response.areModulesAlreadyInstalled()) {
+          moduleInstallClient.unregisterListener(listener)
+          scannerModuleDownloading = false
+          scannerModuleProgress = null
+          startScanner(scanner, activity)
+        }
+      }
+      .addOnFailureListener { e ->
+        moduleInstallClient.unregisterListener(listener)
+        reportScannerFailure(e)
+      }
   }
 
   // Primary capture path: ML Kit document scanner. The scanner is an on-demand
@@ -281,6 +340,7 @@ fun ScannerScreen(
   // installed before launching; launching while it is missing fails inside Play services.
   fun launchDocumentScanner() {
     try {
+      scannerPreparing = true
       val activity = context.findActivity()
       if (activity == null) {
         reportScannerFailure(
@@ -304,12 +364,14 @@ fun ScannerScreen(
           if (response.areModulesAvailable()) {
             startScanner(scanner, activity)
           } else {
-            requestScannerModule(scanner)
+            scannerPreparing = false
+            requestScannerModule(scanner, activity)
           }
         }
         .addOnFailureListener {
           // The availability check itself failed: try the scanner directly, and let the
           // diagnostic dialog show the real reason if that fails too.
+          scannerPreparing = false
           startScanner(scanner, activity)
         }
     } catch (e: Exception) {
@@ -360,9 +422,10 @@ fun ScannerScreen(
     )
   }
 
-  if (scannerModuleDownloading) {
+  if (scannerPreparing || scannerModuleDownloading) {
     ScannerModuleDownloadingDialog(
-      onDismiss = { scannerModuleDownloading = false },
+      isDownloading = scannerModuleDownloading,
+      progress = scannerModuleProgress,
     )
   }
 
@@ -1368,18 +1431,40 @@ private fun ScannerFailureDialog(
 }
 
 @Composable
-private fun ScannerModuleDownloadingDialog(onDismiss: () -> Unit) {
+private fun ScannerModuleDownloadingDialog(
+  isDownloading: Boolean,
+  progress: Float?,
+) {
   AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text(stringResource(R.string.scanner_module_downloading_title)) },
-    text = { Text(stringResource(R.string.scanner_module_downloading_message)) },
-    confirmButton = {
-      TextButton(
-        onClick = onDismiss,
-        modifier = Modifier.testTag("scanner_module_downloading_ok"),
-      ) {
-        Text(stringResource(R.string.scanner_module_downloading_ok))
+    onDismissRequest = {},
+    title = {
+      Text(
+        if (isDownloading) stringResource(R.string.scanner_module_downloading_title)
+        else stringResource(R.string.scanner_module_preparing_title)
+      )
+    },
+    text = {
+      Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+          if (isDownloading) stringResource(R.string.scanner_module_downloading_message)
+          else stringResource(R.string.scanner_module_preparing_message)
+        )
+        if (isDownloading && progress != null) {
+          androidx.compose.material3.LinearProgressIndicator(
+            progress = { progress },
+            modifier = Modifier.fillMaxWidth(),
+          )
+          Text(
+            text = "${(progress * 100).toInt()}%",
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+          )
+        } else {
+          CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+        }
       }
     },
+    confirmButton = {},
   )
 }

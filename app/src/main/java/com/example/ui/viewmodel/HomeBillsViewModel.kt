@@ -201,6 +201,8 @@ class HomeBillsViewModel(
 
   private val _isSaving = MutableStateFlow(false)
   val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
+  private val _isSavingScannedBill = MutableStateFlow(false)
+  val isSavingScannedBill: StateFlow<Boolean> = _isSavingScannedBill.asStateFlow()
 
   private val _isReclassifying = MutableStateFlow(false)
   val isReclassifying: StateFlow<Boolean> = _isReclassifying.asStateFlow()
@@ -643,6 +645,7 @@ class HomeBillsViewModel(
 
     viewModelScope.launch {
       _isSaving.value = true
+      _isSavingScannedBill.value = true
       val existingCategories = (categoriesState.value as? UiState.Success)?.data.orEmpty()
       val existingBills = (allBillsState.value as? UiState.Success)?.data.orEmpty()
 
@@ -725,6 +728,9 @@ class HomeBillsViewModel(
                 }
               }
               _isSaving.value = false
+          _isSavingScannedBill.value = false
+              _isSavingScannedBill.value = false
+              _isSavingScannedBill.value = false
               _scanState.value = ScanUiState.Idle
               if (comparison.hasSpike) {
                 val pct =

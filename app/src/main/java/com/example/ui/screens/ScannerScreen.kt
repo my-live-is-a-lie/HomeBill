@@ -163,8 +163,8 @@ fun ScannerScreen(
   var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
   var showCreateDialog by remember { mutableStateOf(false) }
   var showVoiceSheet by remember { mutableStateOf(false) }
-  // The reason the ML Kit scanner failed to open, shown in a dialog instead of silently
-  // shown to the user. Null when the scanner opened (or was not tried).
+  // The reason the ML Kit scanner failed to open, shown in a diagnostic dialog.
+  // Null when the scanner opened (or was not tried).
   var scannerFailure by remember { mutableStateOf<ScannerFailure?>(null) }
   // True while the scanner module is being downloaded after Play services reported it missing.
   var scannerModuleDownloading by remember { mutableStateOf(false) }
@@ -276,7 +276,7 @@ fun ScannerScreen(
       .addOnFailureListener { e -> reportScannerFailure(e) }
   }
 
-  // First step of the camera chain: ML Kit document scanner. The scanner is an on-demand
+  // Primary capture path: ML Kit document scanner. The scanner is an on-demand
   // Play services module (GmsDocumentScanner is an OptionalModuleApi), so confirm it is
   // installed before launching; launching while it is missing fails inside Play services.
   fun launchDocumentScanner() {

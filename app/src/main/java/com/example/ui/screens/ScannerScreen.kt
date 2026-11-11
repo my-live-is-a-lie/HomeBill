@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import android.Manifest
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -9,7 +8,6 @@ import android.content.ContextWrapper
 import android.content.Intent
 import android.content.IntentSender
 import android.net.Uri
-import android.provider.Settings
 import android.util.Log
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -50,7 +48,6 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.WarningAmber
@@ -109,7 +106,6 @@ import com.example.data.model.BillSheetRow
 import com.example.data.model.UtilityType
 import com.example.data.remote.ScannedBillDraft
 import com.example.domain.BillAnalyticsEngine
-import com.example.ui.components.CameraXBillCaptureDialog
 import com.example.ui.components.CategoryFormDialog
 import com.example.ui.components.ExpressiveButton
 import com.example.ui.components.ExpressiveFab
@@ -120,10 +116,6 @@ import com.example.ui.theme.LocalUtilityPalette
 import com.example.ui.viewmodel.ScanUiState
 import com.example.util.CrashReporter
 import com.example.util.DateAndFormatUtils
-import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.isGranted
-import com.google.accompanist.permissions.rememberPermissionState
-import com.google.accompanist.permissions.shouldShowRationale
 import com.google.android.gms.common.moduleinstall.ModuleInstall
 import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanner
@@ -144,7 +136,6 @@ private tailrec fun Context.findActivity(): Activity? =
 @OptIn(
   ExperimentalMaterial3Api::class,
   ExperimentalLayoutApi::class,
-  ExperimentalPermissionsApi::class,
 )
 @Composable
 fun ScannerScreen(
@@ -170,41 +161,13 @@ fun ScannerScreen(
 ) {
   val context = LocalContext.current
   var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
-  var permissionDeniedNotice by rememberSaveable { mutableStateOf(false) }
-  var permissionRequestedOnce by rememberSaveable { mutableStateOf(false) }
-  var showCameraXScanner by remember { mutableStateOf(false) }
   var showCreateDialog by remember { mutableStateOf(false) }
   var showVoiceSheet by remember { mutableStateOf(false) }
   // The reason the ML Kit scanner failed to open, shown in a dialog instead of silently
-  // falling back to the CameraX dialog. Null when the scanner opened (or was not tried).
+  // shown to the user. Null when the scanner opened (or was not tried).
   var scannerFailure by remember { mutableStateOf<ScannerFailure?>(null) }
   // True while the scanner module is being downloaded after Play services reported it missing.
   var scannerModuleDownloading by remember { mutableStateOf(false) }
-
-  val cameraPermissionState =
-    rememberPermissionState(permission = Manifest.permission.CAMERA) { isGranted ->
-      if (isGranted) {
-        permissionDeniedNotice = false
-        showCameraXScanner = true
-      } else {
-        permissionDeniedNotice = true
-      }
-    }
-
-  val isCameraGranted = cameraPermissionState.status.isGranted
-  val shouldShowCameraRationale = cameraPermissionState.status.shouldShowRationale
-
-  fun openAppPermissionSettings() {
-    runCatching {
-      val settingsIntent =
-        Intent(
-            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.fromParts("package", context.packageName, null),
-          )
-          .apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-      context.startActivity(settingsIntent)
-    }
-  }
 
   val takePictureLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
@@ -219,7 +182,7 @@ fun ScannerScreen(
   }
 
   // Records a scanner failure in the local reports (Settings > crash reports) and shows its
-  // reason on screen, instead of silently falling back to the CameraX dialog.
+  // reason on screen, with an explicit option to use the external system camera.
   fun reportScannerFailure(throwable: Throwable) {
     val detail = "${throwable.javaClass.simpleName}: ${throwable.message ?: "unknown reason"}"
     Log.w("ScannerScreen", "Document scanner failed to open: $detail", throwable)
@@ -229,8 +192,8 @@ fun ScannerScreen(
     scannerFailure = ScannerFailure(detail)
   }
 
-  // Last-resort capture path. Creating the file, building the FileProvider uri and launching the
-  // system camera can all throw (storage full, no camera app, missing CAMERA permission).
+  // Fallback capture path. The external camera app receives the FileProvider uri, so this app
+  // does not need to request the CAMERA permission.
   fun launchSystemCameraFallback() {
     try {
       val tempFile = File.createTempFile("bill_scan_", ".jpg", context.cacheDir)
@@ -243,25 +206,8 @@ fun ScannerScreen(
     }
   }
 
-  // Second step of the camera chain: the CameraX dialog (needs the camera permission). If even
-  // this step cannot start, the system camera is tried next.
-  fun openLegacyCamera() {
-    try {
-      if (isCameraGranted) {
-        showCameraXScanner = true
-      } else {
-        permissionRequestedOnce = true
-        cameraPermissionState.launchPermissionRequest()
-      }
-    } catch (e: Exception) {
-      Log.w("ScannerScreen", "CameraX dialog could not be opened", e)
-      showCameraXScanner = false
-      launchSystemCameraFallback()
-    }
-  }
-
-  // ML Kit Document Scanner: detects the bill edges automatically, lets the user adjust the
-  // crop, and returns only the cropped bill image (so Gemini gets less irrelevant content).
+  // ML Kit Document Scanner is the only in-app capture and document-editing flow. If it is
+  // unavailable, the system camera captures a plain photo without adding another camera stack.
   val documentScannerLauncher =
     rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
       try {
@@ -291,7 +237,7 @@ fun ScannerScreen(
     }
 
   // Launches the scanner once its module is confirmed to be installed. Every failure is
-  // recorded and its reason shown, instead of silently falling back to the CameraX dialog.
+  // recorded and shown, with an explicit option to use the external system camera.
   fun startScanner(scanner: GmsDocumentScanner, activity: Activity) {
     try {
       scanner
@@ -400,22 +346,6 @@ fun ScannerScreen(
     )
   }
 
-  if (showCameraXScanner) {
-    CameraXBillCaptureDialog(
-      onImageCaptured = { capturedUri ->
-        showCameraXScanner = false
-        onImageSelected(capturedUri)
-      },
-      onUseSystemCamera = { launchSystemCameraFallback() },
-      onDismiss = { showCameraXScanner = false },
-      onUnavailable = {
-        // The live preview cannot start: close the dialog and use the system camera instead.
-        showCameraXScanner = false
-        launchSystemCameraFallback()
-      },
-    )
-  }
-
   scannerFailure?.let { failure ->
     ScannerFailureDialog(
       detail = failure.detail,
@@ -425,7 +355,7 @@ fun ScannerScreen(
       },
       onUseFallback = {
         scannerFailure = null
-        openLegacyCamera()
+        launchSystemCameraFallback()
       },
     )
   }
@@ -497,89 +427,6 @@ fun ScannerScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
                   )
-
-                  if (!isCameraGranted && shouldShowCameraRationale) {
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Surface(
-                      color = MaterialTheme.colorScheme.secondaryContainer,
-                      shape = MaterialTheme.shapes.large,
-                      modifier =
-                        Modifier.fillMaxWidth().testTag("camera_permission_rationale_card"),
-                    ) {
-                      Column(modifier = Modifier.padding(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                          Icon(
-                            imageVector = Icons.Default.WarningAmber,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                            modifier = Modifier.size(20.dp),
-                          )
-                          Spacer(modifier = Modifier.width(8.dp))
-                          Text(
-                            text = stringResource(R.string.camera_permission_rationale_title),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                          )
-                        }
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                          text = stringResource(R.string.camera_permission_rationale_body),
-                          style = MaterialTheme.typography.bodySmall,
-                          color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        OutlinedButton(
-                          onClick = {
-                            permissionRequestedOnce = true
-                            cameraPermissionState.launchPermissionRequest()
-                          },
-                          modifier =
-                            Modifier.fillMaxWidth()
-                              .height(48.dp)
-                              .testTag("grant_camera_permission_button"),
-                        ) {
-                          Icon(
-                            imageVector = Icons.Default.CameraAlt,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                          )
-                          Spacer(modifier = Modifier.width(8.dp))
-                          Text(stringResource(R.string.camera_permission_grant_action))
-                        }
-                      }
-                    }
-                  } else if (!isCameraGranted && (permissionDeniedNotice || permissionRequestedOnce)) {
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Surface(
-                      color = MaterialTheme.colorScheme.secondaryContainer,
-                      shape = MaterialTheme.shapes.large,
-                      modifier = Modifier.fillMaxWidth().testTag("camera_permission_denied_card"),
-                    ) {
-                      Column(modifier = Modifier.padding(14.dp)) {
-                        Text(
-                          text = stringResource(R.string.camera_permission_denied),
-                          style = MaterialTheme.typography.bodySmall,
-                          color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        OutlinedButton(
-                          onClick = { openAppPermissionSettings() },
-                          modifier =
-                            Modifier.fillMaxWidth()
-                              .height(48.dp)
-                              .testTag("open_app_settings_button"),
-                        ) {
-                          Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp),
-                          )
-                          Spacer(modifier = Modifier.width(8.dp))
-                          Text(stringResource(R.string.camera_permission_open_settings))
-                        }
-                      }
-                    }
-                  }
 
                   if (scanState is ScanUiState.Error) {
                     Spacer(modifier = Modifier.height(12.dp))
@@ -1486,7 +1333,7 @@ private fun ScannerFailureDialog(
   onUseFallback: () -> Unit,
 ) {
   AlertDialog(
-    // Dismissing the dialog falls back to the CameraX dialog, as before.
+    // Dismissing the dialog opens the system camera fallback.
     onDismissRequest = onUseFallback,
     title = { Text(stringResource(R.string.scanner_failure_title)) },
     text = {

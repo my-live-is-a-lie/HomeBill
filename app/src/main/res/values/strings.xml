@@ -151,6 +151,8 @@
     <string name="scanner_failure_retry">إعادة المحاولة</string>
     <string name="scanner_failure_use_fallback">استخدام كاميرا الجهاز</string>
     <string name="scanner_module_downloading_title">جارٍ تنزيل وحدة الماسح</string>
+    <string name="scanner_module_preparing_title">جارٍ تجهيز الماسح</string>
+    <string name="scanner_module_preparing_message">جارٍ التحقق من توفر مكونات الماسح وتهيئتها. قد يستغرق ذلك لحظات في أول استخدام.</string>
     <string name="scanner_module_downloading_message">وحدة ماسح المستندات غير مثبّتة بعد، ويتم تنزيلها الآن. جرّب مرة أخرى بعد لحظات.</string>
     <string name="scanner_module_downloading_ok">حسنًا</string>
     <string name="crash_reports_title">تقارير الأعطال</string>

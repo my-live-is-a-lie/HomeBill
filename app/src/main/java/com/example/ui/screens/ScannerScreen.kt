@@ -252,7 +252,6 @@ fun ScannerScreen(
       scanner
         .getStartScanIntent(activity)
         .addOnSuccessListener { intentSender ->
-          scannerPreparing = false
           try {
             documentScannerLauncher.launch(IntentSenderRequest.Builder(intentSender).build())
           } catch (e: Exception) {
@@ -291,9 +290,7 @@ fun ScannerScreen(
             scannerModuleDownloading = false
             scannerModuleProgress = null
             scannerModuleReady = true
-            scannerModuleReady = true
-            scannerModuleReady = true
-          startScanner(scanner, activity)
+            startScanner(scanner, activity)
           }
           STATE_FAILED -> {
             moduleInstallClient.unregisterListener(this)
@@ -380,16 +377,16 @@ fun ScannerScreen(
         .areModulesAvailable(scanner)
         .addOnSuccessListener { response ->
           if (response.areModulesAvailable()) {
+            scannerModuleReady = true
             startScanner(scanner, activity)
           } else {
-            scannerPreparing = false
             requestScannerModule(scanner, activity)
           }
         }
         .addOnFailureListener {
-          // The availability check itself failed: try the scanner directly, and let the
-          // diagnostic dialog show the real reason if that fails too.
-          scannerPreparing = false
+          // The availability check itself failed: try the scanner directly and report
+          // the real reason if startup fails.
+          scannerModuleReady = true
           startScanner(scanner, activity)
         }
     } catch (e: Exception) {

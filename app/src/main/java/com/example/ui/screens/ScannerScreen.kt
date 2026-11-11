@@ -291,6 +291,7 @@ fun ScannerScreen(
             moduleInstallClient.unregisterListener(this)
             scannerModuleDownloading = false
             scannerModuleProgress = null
+            scannerPreparing = true
             startScanner(scanner, activity)
           }
           STATE_FAILED -> {
@@ -326,6 +327,7 @@ fun ScannerScreen(
           moduleInstallClient.unregisterListener(listener)
           scannerModuleDownloading = false
           scannerModuleProgress = null
+          scannerPreparing = true
           startScanner(scanner, activity)
         }
       }
